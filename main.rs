@@ -2129,35 +2129,27 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
     const currentRecord = modalRecords[currentModalIndex];
     const inputs = e.target.querySelectorAll('input[name]');
 
+    // 1. Map values and handle Rust's strict Serde types
     inputs.forEach(input => {
         const key = input.name;
         const rawValue = input.value.trim();
-        
-        // Look at what type the backend originally sent us to decide how to parse it
         const originalType = typeof currentRecord[key];
 
         if (Array.isArray(currentRecord[key])) {
-            // 1. Handle Vec<String> (e.g., technologies, achievements)
-            // Splits a comma-separated string "Rust, Axum" into a real JS array ["Rust", "Axum"]
             currentRecord[key] = rawValue ? rawValue.split(',').map(item => item.trim()) : [];
-            
         } else if (originalType === 'number') {
-            // 2. Handle Numeric Fields (u8 and f32 like score, impact, years)
             if (rawValue === '') {
-                currentRecord[key] = 0; // Fallback for empty numeric inputs
+                currentRecord[key] = 0;
             } else if (rawValue.includes('.')) {
-                currentRecord[key] = parseFloat(rawValue); // Catches your f32 'years' field
+                currentRecord[key] = parseFloat(rawValue);
             } else {
-                currentRecord[key] = parseInt(rawValue, 10); // Catches your u8 'score' and 'impact' fields
+                currentRecord[key] = parseInt(rawValue, 10);
             }
-            
         } else {
-            // 3. Handle standard Strings (handle, name, title, summary, etc.)
             currentRecord[key] = rawValue;
         }
     });
 
-    // Fallback protection for the primary identifier
     if (!currentRecord.profile_handle && !currentRecord.handle) {
         currentRecord["profile_handle"] = CURRENT_PROFILE_HANDLE;   
     }
@@ -2185,7 +2177,13 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
             submitBtn.innerText = originalText;
             submitBtn.disabled = false;
             submitBtn.style.borderColor = '';
-            location.reload(); 
+            
+            // ─── IN-PLACE GRAPHICS REWORK ───
+            // 1. Update the background dashboard elements without reloading
+            syncDashboardUI(currentActiveRoute, currentRecord);
+            
+            // 2. Smoothly close the terminal overlay modal
+            closeModal(); 
         }, 1200);
 
     } catch (error) {
@@ -2197,6 +2195,83 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
         submitBtn.disabled = false;
     }
 });
+
+function syncDashboardUI(route, record) {
+    // SCENARIO 1: Core Operative Profile Subsystem
+    if (route.includes('/profile')) {
+        // Direct ID targeting prevents layout layout shifts and faulty string matching
+        if (record.picture) document.getElementById('profile-picture').src = record.picture;
+        if (record.name)    document.getElementById('profile-name').innerText = record.name;
+        
+        // Dynamic fallback to handle either key naming convention from Axum
+        const activeHandle = record.handle || record.profile_handle;
+        if (activeHandle)   document.getElementById('profile-handle').innerText = `[${activeHandle}]`;
+        
+        if (record.title)    document.getElementById('profile-title').innerText = record.title;
+        if (record.location) document.getElementById('profile-location').innerText = record.location;
+        if (record.summary)  document.getElementById('profile-summary').innerText = record.summary;
+    }
+
+    // SCENARIO 2: Tactical Skills HUD Bars
+    else if (route.includes('/skills')) {
+        // Instantly lock onto the single element using the record's primary ID key
+        const targetElement = document.querySelector(`#skills-list .hud-bar-container[data-id="${record.id}"]`);
+        
+        if (targetElement) {
+            // Update label text if the name or category changed
+            targetElement.querySelector('.hud-bar-label span:first-child').innerText = `${record.name} [${record.category}]`;
+            
+            // Update score reading and progress gauge width
+            targetElement.querySelector('.hud-bar-label span:last-child').innerText = `${record.score}%`;
+            targetElement.querySelector('.hud-bar-fill').style.width = `${record.score}%`;
+            
+            // Recalculate tactical warning style thresholds
+            targetElement.classList.remove('critical', 'warning');
+            if (record.score > 95) {
+                targetElement.classList.add('critical');
+            } else if (record.score > 90) {
+                targetElement.classList.add('warning');
+            }
+        }
+    }
+
+    // SCENARIO 3: Service Experiences Grid
+    else if (route.includes('/experiences')) {
+        // Instantly isolate the exact card matching the database UUID/ID field
+        const targetCard = document.querySelector(`#exp-list .exp-card[data-id="${record.id}"]`);
+        
+        if (targetCard) {
+            targetCard.querySelector('.exp-title').innerText = record.role;
+            
+            const orgSpans = targetCard.querySelectorAll('.exp-org span');
+            if (orgSpans[0]) orgSpans[0].innerText = record.organization;
+            if (orgSpans[1]) orgSpans[1].innerText = `${record.years} YRS`;
+            
+            targetCard.querySelector('.exp-sum').innerText = record.summary;
+            targetCard.querySelector('div:last-child').innerHTML = record.skills
+                .map(s => `<span class="tag">${s}</span>`)
+                .join('');
+        }
+    }
+
+    // SCENARIO 4: Operations & Projects Grid
+    else if (route.includes('/projects')) {
+        // Pinpoint the card instantly using the primary key
+        const targetCard = document.querySelector(`#projects-list .proj-card[data-id="${record.id}"]`);
+        
+        if (targetCard) {
+            // 1. Update the visible text elements safely
+            targetCard.querySelector('.exp-title').innerText = record.name;
+            targetCard.querySelector('.exp-org span:last-child').innerText = `${record.impact}%`;
+            targetCard.querySelector('.exp-sum').innerText = record.description;
+            
+            // 2. Re-escape the text string and patch the click context handler attributes
+            const cleanEscapedName = record.name.replace(/'/g, "\\'");
+            targetCard.setAttribute('onclick', `selectProjectContext('${record.id}', '${cleanEscapedName}')`);
+        }
+    }
+}
+
 
 async function selectProjectContext(projectId, projectName) {
     // Dynamically rewrite states to track active element selection
@@ -2237,15 +2312,15 @@ async function loadDashboard(index = 0, handle = "N3_operative_001") {
     // 1. Inject Skill Metrics Matrix (with fixed click triggers)
     const skList = document.getElementById('skills-list');
     skList.innerHTML = skills.map(s => {
-      let catClass = '';
-      if(s.score > 95) catClass = 'critical';
-      else if(s.score > 90) catClass = 'warning';
-      return `
-        <div class="hud-bar-container ${catClass}" onclick="openEditor('skills', '${s.id}', '${s.name}')">
-          <div class="hud-bar-label"><span>${s.name} [${s.category}]</span><span>${s.score}%</span></div>
-          <div class="hud-bar-bg"><div class="hud-bar-fill" style="width: ${s.score}%"></div></div>
+    let catClass = '';
+    if(s.score > 95) catClass = 'critical';
+    else if(s.score > 90) catClass = 'warning';
+    return `
+        <div class="hud-bar-container ${catClass}" data-id="${s.id}" onclick="openEditor('skills', '${s.id}', '${s.name}')">
+        <div class="hud-bar-label"><span>${s.name} [${s.category}]</span><span>${s.score}%</span></div>
+        <div class="hud-bar-bg"><div class="hud-bar-fill" style="width: ${s.score}%"></div></div>
         </div>
-      `;
+    `;
     }).join('');
 
     experiences = data.experiences[0];
@@ -2253,12 +2328,12 @@ async function loadDashboard(index = 0, handle = "N3_operative_001") {
     // 2. Inject Career Nodes
     const expList = document.getElementById('exp-list');
     expList.innerHTML = experiences.map(e => `
-      <div class="exp-card">
+    <div class="exp-card" data-id="${e.id}">
         <div class="exp-title">${e.role}</div>
         <div class="exp-org"><span>${e.organization}</span><span>${e.years} YRS</span></div>
         <div class="exp-sum">${e.summary}</div>
         <div>${e.skills.map(s => `<span class="tag">${s}</span>`).join('')}</div>
-      </div>
+    </div>
     `).join('');
 
     projects = data.projects[0];
@@ -2279,20 +2354,20 @@ async function loadDashboard(index = 0, handle = "N3_operative_001") {
     // 3. Inject Project Grid Files (with polymorphic context argument matched)
     const projList = document.getElementById('projects-list');
     projList.innerHTML = projects.map(p => {
-      const escapedName = p.name.replace(/'/g, "\\'");
-      
-      return `
-        <div class="proj-card" style="margin-bottom:0;" onclick="selectProjectContext(\`${p.id}\`, \`${escapedName}\`)">
-          <div class="exp-title" style="color:var(--neon-pink);">${p.name}</div>
-          <div class="exp-org" style="margin-bottom:4px;">
+    const escapedName = p.name.replace(/'/g, "\\'");
+    
+    return `
+        <div class="proj-card" data-id="${p.id}" style="margin-bottom:0;" onclick="selectProjectContext(\`${p.id}\`, \`${escapedName}\`)">
+        <div class="exp-title" style="color:var(--neon-pink);">${p.name}</div>
+        <div class="exp-org" style="margin-bottom:4px;">
             <span>IMPACT INDEX</span>
             <span style="color:var(--neon-green)">${p.impact}%</span>
-          </div>
-          <div class="exp-sum" style="border-color:var(--neon-cyan); height: 50px; overflow:hidden; text-overflow:ellipsis;">
-            ${p.description}
-          </div>
         </div>
-      `;
+        <div class="exp-sum" style="border-color:var(--neon-cyan); height: 50px; overflow:hidden; text-overflow:ellipsis;">
+            ${p.description}
+        </div>
+        </div>
+    `;
     }).join('');
 
     // Boot interactive central graphics wireframe
