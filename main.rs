@@ -2951,7 +2951,7 @@ function previewFile(event) {
         img.style.display = 'block'; 
         if (label) label.style.display = 'none'; 
         
-        const base64Data = reader.result.split(',')[1]; 
+        const base64Data = reader.result; 
         document.getElementById('picture-hidden-input').value = base64Data;
     }
 
