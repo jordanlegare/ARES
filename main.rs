@@ -51,6 +51,7 @@ pub struct Profile {
 #[derive(Clone, Serialize, Deserialize, FromRow)]
 pub struct Skill {
     pub id: String,
+    pub profile_handle: String,
     pub name: String,
     pub category: String,
     pub score: u8,
@@ -61,6 +62,7 @@ pub struct Skill {
 #[derive(Clone, Serialize, Deserialize, FromRow)]
 pub struct Experience {
     pub id: String,
+    pub profile_handle: String,
     pub role: String,
     pub organization: String,
     pub years: f32,
@@ -74,6 +76,7 @@ pub struct Experience {
 #[derive(Clone, Serialize, Deserialize, FromRow)]
 pub struct Project {
     pub id: String,
+    pub profile_handle: String,
     pub name: String,
     pub impact: u8,
     pub description: String,
@@ -179,6 +182,10 @@ pub struct SubProject {
     pub display_order: i32,
 }
 
+#[derive(Clone, Serialize, Deserialize, FromRow)]
+struct EditQuery {
+    profile_handle: String,
+}
 
 // --- SEARCH BOX ---
 
@@ -546,7 +553,7 @@ async fn get_project_notes(
     Path((id, subproject_name)): Path<(String, String)>,
 ) -> Json<NotesPayload> {
     // Construct a unique filename combining project and sub-project
-    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     // Create a unique cache key for tracking concurrent versions
@@ -564,7 +571,7 @@ async fn save_project_notes(
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
     // Cleaned up the broken string addition from the temporary code snippet
-    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
     let key = format!("projects:{}:subproject:{}", id, subproject_name);
     
     let mut guard = state.note_versions.write().await;
@@ -600,7 +607,7 @@ async fn get_skill_notes(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Json<NotesPayload> {
-    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
+    let file_path = format!("./skill_notes/{}.txt", id); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     let key = format!("skills:{}", id);
@@ -615,7 +622,7 @@ async fn save_skill_notes(
     Path(id): Path<String>,
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
-    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
+    let file_path = format!("./skill_notes/{}.txt", id); //tmp
     let key = format!("skills:{}", id);
     
     let mut guard = state.note_versions.write().await;
@@ -650,7 +657,7 @@ async fn get_skill_version(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicitly configure the connection to create the file
     let options = SqliteConnectOptions::new()
-        .filename("/tmp/Resume_profiles.db") // Looks in the current directory //tmp
+        .filename("./Resume_profiles.db") // Looks in the current directory //tmp
         .create_if_missing(true);       // The magic flag!
 
     // 2. Build the pool using those options
@@ -664,11 +671,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Initialize databank sectors
-    if let Err(e) = tokio::fs::create_dir_all("/tmp/project_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("./project_notes").await { //tmp
         tracing::error!("Failed to initialize project vault: {}", e);
     }
     // -- NEW: Secure local storage sector for skills --
-    if let Err(e) = tokio::fs::create_dir_all("/tmp/skill_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("./skill_notes").await { //tmp
         tracing::error!("Failed to initialize skill vault: {}", e);
     }
 
@@ -696,10 +703,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         // header news
         .route("/api/news-stream", get(news_feed_handler))
         .route("/api/push-news", post(push_news_handler))
+        // main edits
+        .route("/api/profile/edit", get(get_profile))
+        .route("/api/skills/edit", get(get_skills))
+        .route("/api/experiences/edit", get(get_experiences))
+        .route("/api/projects/edit", get(get_projects))
+        .route("/api/profile/update", post(update_profile))
+        .route("/api/skills/update", post(update_skills))
+        .route("/api/experiences/update", post(update_experiences))
+        .route("/api/projects/update", post(update_projects))
+        //.route("")
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0,0,0,0], 80)); //change to your ip or proxy_pass it with nginx. //0.0.0.0, 80
+    let addr = SocketAddr::from(([127,0,0,1], 3000)); //change to your ip or proxy_pass it with nginx. //0.0.0.0, 80
 
     tracing::info!("ARES MAINFRAME ONLINE");
     tracing::info!("Listening on {}", addr);
@@ -731,27 +748,27 @@ fn seed_data(pool: SqlitePool) -> AppState {
 
    let skills = vec![
     vec![
-          Skill { id: "1".into(), name: "rust".into(), category: "Kernel".into(), score: 98, links: vec!["linux".into(), "zero_dep_arch".into(), "ice_break".into()] },
-          Skill { id: "2".into(), name: "axum".into(), category: "Interface".into(), score: 97, links: vec!["rust".into(), "snort_ids".into()] },
-          Skill { id: "3".into(), name: "zero_dep_arch".into(), category: "Architecture".into(), score: 95, links: vec!["rust".into(), "axum".into()] },
-          Skill { id: "4".into(), name: "linux".into(), category: "Infra".into(), score: 94, links: vec!["rust".into(), "snort_ids".into()] },
-          Skill { id: "5".into(), name: "snort_ids".into(), category: "SecOps".into(), score: 95, links: vec!["linux".into(), "axum".into(), "rf_slicing".into()] },
-          Skill { id: "6".into(), name: "ice_break".into(), category: "Offense".into(), score: 99, links: vec!["rust".into(), "synaptic_sync".into(), "comint_fracture".into()] },
-          Skill { id: "7".into(), name: "neuro_link".into(), category: "Hardware".into(), score: 88, links: vec!["rust".into(), "fpga".into(), "synaptic_sync".into()] },
-          Skill { id: "8".into(), name: "synaptic_sync".into(), category: "Neural".into(), score: 91, links: vec!["neuro_link".into(), "tactical_sync".into()] },
-          Skill { id: "9".into(), name: "fpga".into(), category: "Hardware".into(), score: 92, links: vec!["neuro_link".into(), "rf_slicing".into()] },
-          Skill { id: "10".into(), name: "iridium".into(), category: "Propulsion".into(), score: 93, links: vec!["plasma_dynamics".into(), "nivelir".into()] },
-          Skill { id: "11".into(), name: "plasma_dynamics".into(), category: "Propulsion".into(), score: 94, links: vec!["iridium".into(), "kinetic_routing".into(), "elint_ghosting".into()] },
-          Skill { id: "12".into(), name: "nivelir".into(), category: "Orbital".into(), score: 96, links: vec!["ice_break".into(), "plasma_dynamics".into(), "fisint_override".into()] },
-          Skill { id: "13".into(), name: "swarm_logic".into(), category: "Tactical".into(), score: 96, links: vec!["rust".into(), "nivelir".into()] },
-          Skill { id: "14".into(), name: "tactical_sync".into(), category: "Tactical".into(), score: 90, links: vec!["synaptic_sync".into(), "swarm_logic".into()] },
-          Skill { id: "15".into(), name: "kinetic_routing".into(), category: "Warfare".into(), score: 92, links: vec!["nivelir".into(), "plasma_dynamics".into()] },
-          Skill { id: "16".into(), name: "sigint_ew".into(), category: "SIGINT".into(), score: 94, links: vec!["snort_ids".into(), "fpga".into(), "rf_slicing".into()] },
-          Skill { id: "17".into(), name: "comint_fracture".into(), category: "SIGINT".into(), score: 97, links: vec!["ice_break".into(), "sigint_ew".into()] },
-          Skill { id: "18".into(), name: "fisint_override".into(), category: "SIGINT".into(), score: 95, links: vec!["nivelir".into(), "iridium".into()] },
-          Skill { id: "19".into(), name: "elint_ghosting".into(), category: "SIGINT".into(), score: 91, links: vec!["plasma_dynamics".into(), "sigint_ew".into()] },
-          Skill { id: "20".into(), name: "rf_slicing".into(), category: "SIGINT".into(), score: 93, links: vec!["fpga".into(), "snort_ids".into()] },
-          Skill { id: "21".into(), name: "neuro_phreaking".into(), category: "SIGINT".into(), score: 89, links: vec!["synaptic_sync".into(), "comint_fracture".into()] },
+          Skill { id: "1".into(), profile_handle: "N3_operative_001".into(), name: "rust".into(), category: "Kernel".into(), score: 98, links: vec!["linux".into(), "zero_dep_arch".into(), "ice_break".into()] },
+          Skill { id: "2".into(), profile_handle: "N3_operative_001".into(), name: "axum".into(), category: "Interface".into(), score: 97, links: vec!["rust".into(), "snort_ids".into()] },
+          Skill { id: "3".into(), profile_handle: "N3_operative_001".into(), name: "zero_dep_arch".into(), category: "Architecture".into(), score: 95, links: vec!["rust".into(), "axum".into()] },
+          Skill { id: "4".into(), profile_handle: "N3_operative_001".into(), name: "linux".into(), category: "Infra".into(), score: 94, links: vec!["rust".into(), "snort_ids".into()] },
+          Skill { id: "5".into(), profile_handle: "N3_operative_001".into(), name: "snort_ids".into(), category: "SecOps".into(), score: 95, links: vec!["linux".into(), "axum".into(), "rf_slicing".into()] },
+          Skill { id: "6".into(), profile_handle: "N3_operative_001".into(), name: "ice_break".into(), category: "Offense".into(), score: 99, links: vec!["rust".into(), "synaptic_sync".into(), "comint_fracture".into()] },
+          Skill { id: "7".into(), profile_handle: "N3_operative_001".into(), name: "neuro_link".into(), category: "Hardware".into(), score: 88, links: vec!["rust".into(), "fpga".into(), "synaptic_sync".into()] },
+          Skill { id: "8".into(), profile_handle: "N3_operative_001".into(), name: "synaptic_sync".into(), category: "Neural".into(), score: 91, links: vec!["neuro_link".into(), "tactical_sync".into()] },
+          Skill { id: "9".into(), profile_handle: "N3_operative_001".into(), name: "fpga".into(), category: "Hardware".into(), score: 92, links: vec!["neuro_link".into(), "rf_slicing".into()] },
+          Skill { id: "10".into(), profile_handle: "N3_operative_001".into(), name: "iridium".into(), category: "Propulsion".into(), score: 93, links: vec!["plasma_dynamics".into(), "nivelir".into()] },
+          Skill { id: "11".into(), profile_handle: "N3_operative_001".into(), name: "plasma_dynamics".into(), category: "Propulsion".into(), score: 94, links: vec!["iridium".into(), "kinetic_routing".into(), "elint_ghosting".into()] },
+          Skill { id: "12".into(), profile_handle: "N3_operative_001".into(), name: "nivelir".into(), category: "Orbital".into(), score: 96, links: vec!["ice_break".into(), "plasma_dynamics".into(), "fisint_override".into()] },
+          Skill { id: "13".into(), profile_handle: "N3_operative_001".into(), name: "swarm_logic".into(), category: "Tactical".into(), score: 96, links: vec!["rust".into(), "nivelir".into()] },
+          Skill { id: "14".into(), profile_handle: "N3_operative_001".into(), name: "tactical_sync".into(), category: "Tactical".into(), score: 90, links: vec!["synaptic_sync".into(), "swarm_logic".into()] },
+          Skill { id: "15".into(), profile_handle: "N3_operative_001".into(), name: "kinetic_routing".into(), category: "Warfare".into(), score: 92, links: vec!["nivelir".into(), "plasma_dynamics".into()] },
+          Skill { id: "16".into(), profile_handle: "N3_operative_001".into(), name: "sigint_ew".into(), category: "SIGINT".into(), score: 94, links: vec!["snort_ids".into(), "fpga".into(), "rf_slicing".into()] },
+          Skill { id: "17".into(), profile_handle: "N3_operative_001".into(), name: "comint_fracture".into(), category: "SIGINT".into(), score: 97, links: vec!["ice_break".into(), "sigint_ew".into()] },
+          Skill { id: "18".into(), profile_handle: "N3_operative_001".into(), name: "fisint_override".into(), category: "SIGINT".into(), score: 95, links: vec!["nivelir".into(), "iridium".into()] },
+          Skill { id: "19".into(), profile_handle: "N3_operative_001".into(), name: "elint_ghosting".into(), category: "SIGINT".into(), score: 91, links: vec!["plasma_dynamics".into(), "sigint_ew".into()] },
+          Skill { id: "20".into(), profile_handle: "N3_operative_001".into(), name: "rf_slicing".into(), category: "SIGINT".into(), score: 93, links: vec!["fpga".into(), "snort_ids".into()] },
+          Skill { id: "21".into(), profile_handle: "N3_operative_001".into(), name: "neuro_phreaking".into(), category: "SIGINT".into(), score: 89, links: vec!["synaptic_sync".into(), "comint_fracture".into()] },
       ],
    ];
 
@@ -759,6 +776,7 @@ fn seed_data(pool: SqlitePool) -> AppState {
       vec![
           Experience {
               id: "exp_01".into(),
+              profile_handle: "N3_operative_001".into(),
               role: "LEAD SYNAPTIC ARCHITECT".into(),
               organization: "DARPA // ADVANCED NEURO-LABS".into(),
               years: 4.5,
@@ -772,6 +790,7 @@ fn seed_data(pool: SqlitePool) -> AppState {
           },
           Experience {
               id: "exp_02".into(),
+              profile_handle: "N3_operative_001".into(),
               role: "AI BIOETHICS COLLABORATOR".into(),
               organization: "NIH // THE BRAIN INITIATIVE".into(),
               years: 3.2,
@@ -784,6 +803,7 @@ fn seed_data(pool: SqlitePool) -> AppState {
           },
           Experience {
               id: "exp_03".into(),
+              profile_handle: "N3_operative_001".into(),
               role: "METALLURGIC SYSTEMS ENGINEER".into(),
               organization: "TSN // ORBITAL INFRASTRUCTURE".into(),
               years: 2.1,
@@ -800,10 +820,10 @@ fn seed_data(pool: SqlitePool) -> AppState {
 
     let projects = vec![
       vec![
-          Project { id: "p1".into(), name: "PROJECT AEGIS".into(), impact: 99, description: "DEFENSIVE NEURAL MESH. ENCRYPTS B2B SIGNALS AGAINST INTRUSION.".into(), technologies: vec!["RUST".into(), "FPGA".into(), "CRYPTO".into()] },
-          Project { id: "p2".into(), name: "ORBITAL_EYE".into(), impact: 97, description: "CLANDESTINE NIVELIR SATELLITE INSPECTION DAEMON. [CLASSIFIED]".into(), technologies: vec!["ORBITAL-MECH".into(), "KERNEL".into(), "IRIDIUM-THRUST".into()] },
-          Project { id: "p3".into(), name: "MNEMOSYNE_VAULT".into(), impact: 88, description: "DEEP-STORAGE COGNITIVE BACKUP. NON-VOLATILE SYNTHETIC MEMORY.".into(), technologies: vec!["PERSISTENCE".into(), "ENCRYPTION".into()] },
-          Project { id: "p4".into(), name: "SYS_BLEED_DASH".into(), impact: 94, description: "AGGRESSIVE IDS ALERT UI. FILTERS LOCAL PACKET ANOMALIES TO SQLITE.".into(), technologies: vec!["AXUM".into(), "ASKAMA".into(), "SNORT".into()] },
+          Project { id: "p1".into(), profile_handle: "N3_operative_001".into(), name: "PROJECT AEGIS".into(), impact: 99, description: "DEFENSIVE NEURAL MESH. ENCRYPTS B2B SIGNALS AGAINST INTRUSION.".into(), technologies: vec!["RUST".into(), "FPGA".into(), "CRYPTO".into()] },
+          Project { id: "p2".into(), profile_handle: "N3_operative_001".into(), name: "ORBITAL_EYE".into(), impact: 97, description: "CLANDESTINE NIVELIR SATELLITE INSPECTION DAEMON. [CLASSIFIED]".into(), technologies: vec!["ORBITAL-MECH".into(), "KERNEL".into(), "IRIDIUM-THRUST".into()] },
+          Project { id: "p3".into(), profile_handle: "N3_operative_001".into(), name: "MNEMOSYNE_VAULT".into(), impact: 88, description: "DEEP-STORAGE COGNITIVE BACKUP. NON-VOLATILE SYNTHETIC MEMORY.".into(), technologies: vec!["PERSISTENCE".into(), "ENCRYPTION".into()] },
+          Project { id: "p4".into(), profile_handle: "N3_operative_001".into(), name: "SYS_BLEED_DASH".into(), impact: 94, description: "AGGRESSIVE IDS ALERT UI. FILTERS LOCAL PACKET ANOMALIES TO SQLITE.".into(), technologies: vec!["AXUM".into(), "ASKAMA".into(), "SNORT".into()] },
       ],
     ];
 
@@ -994,6 +1014,177 @@ pub async fn new_subprojects(
     Ok(Json(new_sub))
 }
 
+pub async fn get_profile(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EditQuery>,
+) -> Result<Json<Profile>, axum::http::StatusCode> {
+    let pool = &state.pool;
+
+    let profile = sqlx::query_as::<_, Profile>(
+        r#"
+         SELECT handle, name, title, location, summary, picture
+         FROM profiles 
+         WHERE handle = ?
+       "#,
+    )
+    .bind(&params.profile_handle)
+    .fetch_one(pool)
+    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(Json(profile))
+}
+
+pub async fn get_skills(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EditQuery>,
+) -> Result<Json<Vec<Skill>>, axum::http::StatusCode> {
+    let pool = &state.pool;
+
+    let skills = sqlx::query_as::<_, Skill>(
+        r#"
+         SELECT id, profile_handle, name, category, score, links
+         FROM skills 
+         WHERE profile_handle = ?
+       "#,
+    )
+    .bind(&params.profile_handle)
+    .fetch_all(pool)
+    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(Json(skills))
+}
+
+pub async fn get_projects(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EditQuery>,
+) -> Result<Json<Vec<Project>>, axum::http::StatusCode> {
+    let pool = &state.pool;
+
+    let projects = sqlx::query_as::<_, Project>(
+        r#"
+         SELECT id, profile_handle, name, impact, description, technologies
+         FROM projects 
+         WHERE profile_handle = ?
+       "#,
+    )
+    .bind(&params.profile_handle)
+    .fetch_all(pool)
+    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(Json(projects))
+}
+
+pub async fn get_experiences(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EditQuery>,
+) -> Result<Json<Vec<Experience>>, axum::http::StatusCode> {
+    let pool = &state.pool;
+
+    let experiences = sqlx::query_as::<_, Experience>(
+        r#"
+         SELECT id, profile_handle, role, organization, years, summary, achievements, skills
+         FROM experiences
+         WHERE profile_handle = ?
+       "#,
+    )
+    .bind(&params.profile_handle)
+    .fetch_all(pool)
+    .await
+    .map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(Json(experiences))
+}
+
+pub async fn update_profile(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Profile>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+    // Extract the profile_handle directly from the incoming payload
+
+    // Re-use your database utility function cleanly
+    save_profile(&pool, &payload)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[ DATABASE TRANSACTION CORRUPTED ]: {}", e),
+            )
+        })?;
+
+    // Return a 200 OK status code back to your JavaScript frontend fetch caller
+    Ok(StatusCode::OK)
+}
+
+pub async fn update_projects(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Project>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+    // Extract the profile_handle directly from the incoming payload
+    let handle = &payload.profile_handle;
+
+    // Re-use your database utility function cleanly
+    save_project(&pool, handle, &payload)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[ DATABASE TRANSACTION CORRUPTED ]: {}", e),
+            )
+        })?;
+
+    // Return a 200 OK status code back to your JavaScript frontend fetch caller
+    Ok(StatusCode::OK)
+}
+
+pub async fn update_skills(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Skill>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+    // Extract the profile_handle directly from the incoming payload
+    let handle = &payload.profile_handle;
+
+    // Re-use your database utility function cleanly
+    save_skill(&pool, handle, &payload)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[ DATABASE TRANSACTION CORRUPTED ]: {}", e),
+            )
+        })?;
+
+    // Return a 200 OK status code back to your JavaScript frontend fetch caller
+    Ok(StatusCode::OK)
+}
+
+pub async fn update_experiences(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<Experience>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+    // Extract the profile_handle directly from the incoming payload
+    let handle = &payload.profile_handle;
+
+    // Re-use your database utility function cleanly
+    save_experience(&pool, handle, &payload)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[ DATABASE TRANSACTION CORRUPTED ]: {}", e),
+            )
+        })?;
+
+    // Return a 200 OK status code back to your JavaScript frontend fetch caller
+    Ok(StatusCode::OK)
+}
+
 
 const INDEX_HTML: &str = r##"
 <!DOCTYPE html>
@@ -1094,8 +1285,33 @@ header {
 .panel::after { content: ''; position: absolute; bottom: 0; right: 0; width: 40px; height: 4px; background: var(--army-khaki); }
 
 .panel-title {
-  color: var(--army-khaki); font-size: 1.2rem; border-bottom: 1px dashed var(--army-sage);
-  padding-bottom: 5px; margin-bottom: 15px; text-shadow: 0 0 4px rgba(194, 178, 128, 0.3);
+  /* Your existing styles */
+  color: var(--army-khaki);
+  font-size: 1.2rem;
+  border-bottom: 1px dashed var(--army-sage);
+  padding-bottom: 5px;
+  margin-bottom: 15px;
+  text-shadow: 0 0 4px rgba(194, 178, 128, 0.3);
+  
+  /* Flexbox alignment */
+  display: flex;
+  justify-content: space-between; /* Pushes text to left, button to right */
+  align-items: center;            /* Centers them vertically */
+}
+
+.modify-btn {
+  background: transparent;
+  border: none;
+  color: var(--army-sage);
+  cursor: pointer;
+  padding: 0;                     /* Reset padding to prevent offset */
+  display: flex;                  /* Centers the SVG icon inside the button */
+  align-items: center;
+  transition: color 0.2s ease;
+}
+
+.modify-btn:hover {
+  color: var(--army-khaki);
 }
 
 .intel-scroll-container { flex: 1; overflow-y: auto; padding-right: 4px; }
@@ -1549,7 +1765,15 @@ header {
   </header>
 
   <section class="panel" style="grid-column: 1; grid-row: 2;">
-    <div class="panel-title">SUBJECT_INTEL</div>
+    <div class="panel-title">
+    <span>SUBJECT_INTEL</span>
+    <button class="modify-btn" data-route="/api/profile/edit" aria-label="Modify">
+    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+    </svg>
+    </button>
+    </div>
     
     <div class="avatar-wrapper">
       <img class="avatar-img" id="profile-picture" src="" alt="Operative Realframe Uplink">
@@ -1588,17 +1812,41 @@ header {
 </section>
 
   <section class="panel" style="grid-column: 3; grid-row: 2;">
-    <div class="panel-title">MATRIX_SKILLS</div>
+    <div class="panel-title">
+    <span>MATRIX_SKILLS</span>
+    <button class="modify-btn" data-route="/api/skills/edit" aria-label="Modify">
+    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+    </svg>
+    </button>
+    </div>
     <div id="skills-list" style="overflow-y:auto; height:100%;"></div>
   </section>
 
   <section class="panel" style="grid-column: 1; grid-row: 3;">
-    <div class="panel-title">CHRONOS_LOGS</div>
+    <div class="panel-title">
+    <span>CHRONOS_LOGS</span>
+    <button class="modify-btn" data-route="/api/experiences/edit" aria-label="Modify">
+    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+    </svg>
+    </button>
+    </div>
     <div id="exp-list" style="overflow-y:auto; height:100%;"></div>
   </section>
 
   <section class="panel" style="grid-column: 2; grid-row: 3;">
-    <div class="panel-title">NEURAL_PROJECTS</div>
+    <div class="panel-title">
+    <span>NEURAL_PROJECTS</span>
+    <button class="modify-btn" data-route="/api/projects/edit" aria-label="Modify">
+    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+    </svg>
+    </button>
+    </div>
     <div id="projects-list" style="overflow-y:auto; height:100%; display:grid; grid-template-columns:1fr 1fr; gap:10px;"></div>
   </section>
 
@@ -1658,6 +1906,30 @@ header {
       </div>
       <button type="submit" class="action-grid-btn primary-submit">Add Sub-Project</button>
     </form>
+  </div>
+</div>
+
+<div id="dynamic-edit-modal" class="matrix-modal-overlay">
+  <div class="matrix-modal-content">
+    
+    <div class="modal-header">
+      <div style="display: flex; align-items: center; gap: 15px;">
+        <h3>Edit Entry</h3>
+        <span id="modal-record-counter" style="color: var(--army-khaki); font-size: 0.85rem; font-weight: bold;">[ ENTRY -- / -- ]</span>
+      </div>
+      
+      <div style="display: flex; gap: 8px;">
+        <button type="button" class="modal-nav-btn prev" style="background: transparent; border: 1px solid var(--army-olive); color: var(--army-olive); padding: 2px 8px; cursor: pointer; font-family: inherit;">&lt;</button>
+        <button type="button" class="modal-nav-btn next" style="background: transparent; border: 1px solid var(--army-olive); color: var(--army-olive); padding: 2px 8px; cursor: pointer; font-family: inherit;">&gt;</button>
+        <button type="button" class="close-modal-btn" onclick="closeModal()">[ Close ]</button>
+      </div>
+    </div>
+
+    <form id="edit-form">
+      <div id="form-fields"></div>
+      <button type="submit" class="primary-submit">Save Current Record</button>
+    </form>
+
   </div>
 </div>
 
@@ -1809,26 +2081,121 @@ setInterval(drawMatrix, 33);
 
 let currentProfileIndex = 0;
 let profiles = [];
+let currentActiveRoute = '';
 
 document.addEventListener('click', (e) => {
-  if (e.target.classList.contains('arrow')) {
-    if (e.target.classList.contains('prev')) {
-      currentProfileIndex = (currentProfileIndex - 1 + profiles.length) % profiles.length;
-    } else if (e.target.classList.contains('next')) {
-      currentProfileIndex = (currentProfileIndex + 1) % profiles.length;
+    // 1. Handle Arrow navigation
+    if (e.target.classList.contains('arrow')) {
+        if (e.target.classList.contains('prev')) {
+            currentProfileIndex = (currentProfileIndex - 1 + profiles.length) % profiles.length;
+        } else if (e.target.classList.contains('next')) {
+            currentProfileIndex = (currentProfileIndex + 1) % profiles.length;
+        }
+        
+        const consoleContainer = document.getElementById('center-console');
+        if (consoleContainer) consoleContainer.classList.remove('collapsed');
+        loadDashboard(currentProfileIndex, profiles[currentProfileIndex].handle);
+    } 
+    
+    // 2. Handle Modify Button clicks
+    // Use .closest() to ensure it catches the click even if the user clicks the SVG/path inside the button
+    const modifyBtn = e.target.closest('.modify-btn');
+    if (modifyBtn) {
+        const route = modifyBtn.getAttribute('data-route');
+        if (route) {
+            currentActiveRoute = route;
+            openEditModal(route);
+        }
     }
 
-    // ACTION: Force-reset the center console back to its original graph state
-    const consoleContainer = document.getElementById('center-console');
-    if (consoleContainer) {
-        consoleContainer.classList.remove('collapsed');
+    if (e.target.closest('.modal-nav-btn')) {
+        const btn = e.target.closest('.modal-nav-btn');
+        
+        if (btn.classList.contains('prev')) {
+            currentModalIndex = (currentModalIndex - 1 + modalRecords.length) % modalRecords.length;
+        } else if (btn.classList.contains('next')) {
+            currentModalIndex = (currentModalIndex + 1) % modalRecords.length;
+        }
+        
+        renderCurrentModalRecord();
+    }
+});
+
+document.getElementById('edit-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+
+    if (!modalRecords || modalRecords.length === 0) return;
+
+    const currentRecord = modalRecords[currentModalIndex];
+    const inputs = e.target.querySelectorAll('input[name]');
+
+    inputs.forEach(input => {
+        const key = input.name;
+        const rawValue = input.value.trim();
+        
+        // Look at what type the backend originally sent us to decide how to parse it
+        const originalType = typeof currentRecord[key];
+
+        if (Array.isArray(currentRecord[key])) {
+            // 1. Handle Vec<String> (e.g., technologies, achievements)
+            // Splits a comma-separated string "Rust, Axum" into a real JS array ["Rust", "Axum"]
+            currentRecord[key] = rawValue ? rawValue.split(',').map(item => item.trim()) : [];
+            
+        } else if (originalType === 'number') {
+            // 2. Handle Numeric Fields (u8 and f32 like score, impact, years)
+            if (rawValue === '') {
+                currentRecord[key] = 0; // Fallback for empty numeric inputs
+            } else if (rawValue.includes('.')) {
+                currentRecord[key] = parseFloat(rawValue); // Catches your f32 'years' field
+            } else {
+                currentRecord[key] = parseInt(rawValue, 10); // Catches your u8 'score' and 'impact' fields
+            }
+            
+        } else {
+            // 3. Handle standard Strings (handle, name, title, summary, etc.)
+            currentRecord[key] = rawValue;
+        }
+    });
+
+    // Fallback protection for the primary identifier
+    if (!currentRecord.profile_handle && !currentRecord.handle) {
+        currentRecord["profile_handle"] = CURRENT_PROFILE_HANDLE;   
     }
 
-    // Refresh the view with the new index
-    loadDashboard(currentProfileIndex, profiles[currentProfileIndex].handle);
-       
-  }
-  // console.log("currentProfileIndex=",currentProfileIndex);
+    const updateRoute = currentActiveRoute.replace('/edit', '/update');
+
+    try {
+        const submitBtn = e.target.querySelector('.primary-submit');
+        const originalText = submitBtn.innerText;
+        submitBtn.innerText = '[ TRANSMITTING TYPED DATA... ]';
+        submitBtn.disabled = true;
+
+        const response = await fetch(updateRoute, {
+            method: 'POST', 
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(currentRecord)
+        });
+
+        if (!response.ok) throw new Error('Uplink synchronization failed');
+
+        submitBtn.style.borderColor = 'var(--army-sage)';
+        submitBtn.innerText = '[ DATA LINK SECURED ]';
+        
+        setTimeout(() => {
+            submitBtn.innerText = originalText;
+            submitBtn.disabled = false;
+            submitBtn.style.borderColor = '';
+            location.reload(); 
+        }, 1200);
+
+    } catch (error) {
+        console.error("Transmission Failure:", error);
+        alert("[ AXUM NODE REJECTED PAYLOAD: TYPE MISMATCH DETECTED ]");
+        
+        const submitBtn = e.target.querySelector('.primary-submit');
+        submitBtn.innerText = 'Save Current Record';
+        submitBtn.disabled = false;
+    }
 });
 
 async function selectProjectContext(projectId, projectName) {
@@ -2570,6 +2937,122 @@ function startBackgroundSync() {
       }
     }
   }, 3000); 
+}
+
+function previewFile(event) {
+    const file = event.target.files[0];
+    const reader = new FileReader();
+
+    reader.onloadend = function() {
+        const img = document.getElementById('preview-img');
+        const label = document.getElementById('avatar-label');
+        
+        img.src = reader.result;
+        img.style.display = 'block'; 
+        if (label) label.style.display = 'none'; 
+        
+        const base64Data = reader.result.split(',')[1]; 
+        document.getElementById('picture-hidden-input').value = base64Data;
+    }
+
+    if (file) {
+        reader.readAsDataURL(file);
+    }
+}
+
+let modalRecords = [];
+let currentModalIndex = 0;
+
+async function openEditModal(route) {
+    const modal = document.getElementById('dynamic-edit-modal');
+    const formFields = document.getElementById('form-fields');
+    
+    modal.classList.add('active'); 
+    formFields.innerHTML = '<p style="color: var(--army-sage); text-align: center;">[ INITIALIZING RECON UPLINK... ]</p>';
+
+    try {
+        const built_route = `${route}?profile_handle=${encodeURIComponent(CURRENT_PROFILE_HANDLE)}`;
+        
+        const response = await fetch(built_route);
+        if (!response.ok) throw new Error('Network response failed');
+        
+        const data = await response.json();
+        
+        // Save the complete array into our state variable
+        modalRecords = Array.isArray(data) ? data : [data];
+        currentModalIndex = 0; // Reset to the first entry
+        
+        // Hand off layout duties to our dedicated single-record renderer
+        renderCurrentModalRecord();
+        
+    } catch (error) {
+        console.error("Fetch Error:", error);
+        formFields.innerHTML = '<p style="color: var(--army-red); text-align: center;">[ ERROR: CONNECTION TO NODE FAILED ]</p>';
+    }
+}
+
+function renderCurrentModalRecord() {
+    const formFields = document.getElementById('form-fields');
+    const counterDisplay = document.getElementById('modal-record-counter');
+    
+    if (!modalRecords || modalRecords.length === 0) {
+        formFields.innerHTML = '<p style="color: var(--army-red);">[ NO DATA RECORDS FOUND ]</p>';
+        return;
+    }
+
+    // Pull the active record based on current tracking index
+    const profileData = modalRecords[currentModalIndex];
+    
+    // Update tactical tracker readout (e.g., [ ENTRY 01 / 04 ])
+    if (counterDisplay) {
+        const padCurrent = String(currentModalIndex + 1).padStart(2, '0');
+        const padTotal = String(modalRecords.length).padStart(2, '0');
+        counterDisplay.innerText = `[ ENTRY ${padCurrent} / ${padTotal} ]`;
+    }
+
+    // Render only the single selected record
+    formFields.innerHTML = '<div class="grid-2">'; 
+    
+    for (const [key, value] of Object.entries(profileData)) {
+        const displayValue = value !== null ? value : ''; 
+        
+        if (key === 'picture') {
+            const avatarHTML = `
+                <div class="avatar-upload-zone" style="grid-column: 1 / -1;">
+                    <div class="avatar-frame" onclick="document.getElementById('file-input').click()">
+                        <span class="avatar-label" id="avatar-label" style="display: ${displayValue ? 'none' : 'block'};">
+                            [ Initialize Uplink ]<br>Select Portrait
+                        </span>
+                        <img id="preview-img" src="${displayValue}" style="display: ${displayValue ? 'block' : 'none'};">
+                        <input type="file" id="file-input" style="display: none;" onchange="previewFile(event)">
+                        <input type="hidden" name="picture" id="picture-hidden-input" value="${displayValue}">
+                    </div>
+                </div>
+            `;
+            formFields.insertAdjacentHTML('afterbegin', avatarHTML); 
+        } else {
+            // ─── SECURITY CHECK FOR RESTRICTED IDENTIFIERS ───
+            // Checks if the current key is a system critical record tracker
+            const isProtected = ['id', 'handle', 'profile_handle'].includes(key);
+            
+            formFields.innerHTML += `
+                <div class="input-group">
+                    <label>${key.replace(/_/g, ' ')} ${isProtected ? '[ LOCKED ]' : ''}</label>
+                    <input type="text" 
+                           name="${key}" 
+                           value="${displayValue}" 
+                           ${isProtected ? 'disabled class="restricted-input"' : ''}>
+                </div>
+            `;
+        }
+    }
+    
+    formFields.innerHTML += '</div>'; 
+}
+
+function closeModal() {
+    // Fade the modal out
+    document.getElementById('dynamic-edit-modal').classList.remove('active');
 }
 
 // Global Event Declarations
