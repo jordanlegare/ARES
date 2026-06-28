@@ -3589,6 +3589,7 @@ const FORM_HTML: &str = r##"
     function executeUplink() {
         const skills = Array.from(document.querySelectorAll('.skill-entry')).map(node => ({
             id: crypto.randomUUID(),
+            profile_handle: document.getElementById('handle').value,
             name: node.querySelector('.s-name').value,
             category: node.querySelector('.s-cat').value,
             score: parseInt(node.querySelector('.s-score').value || 0),
@@ -3597,6 +3598,7 @@ const FORM_HTML: &str = r##"
 
         const experiences = Array.from(document.querySelectorAll('.exp-entry')).map(node => ({
             id: crypto.randomUUID(),
+            profile_handle: document.getElementById('handle').value,
             role: node.querySelector('.e-role').value,
             organization: node.querySelector('.e-org').value,
             years: parseFloat(node.querySelector('.e-years').value || 0.0),
@@ -3607,6 +3609,7 @@ const FORM_HTML: &str = r##"
 
         const projects = Array.from(document.querySelectorAll('.proj-entry')).map(node => ({
             id: "p" + crypto.randomUUID(),
+            profile_handle: document.getElementById('handle').value,
             name: node.querySelector('.p-name').value,
             impact: parseInt(node.querySelector('.p-impact').value || 0),
             description: node.querySelector('.p-desc').value,
