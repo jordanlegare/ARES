@@ -553,7 +553,7 @@ async fn get_project_notes(
     Path((id, subproject_name)): Path<(String, String)>,
 ) -> Json<NotesPayload> {
     // Construct a unique filename combining project and sub-project
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     // Create a unique cache key for tracking concurrent versions
@@ -571,7 +571,7 @@ async fn save_project_notes(
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
     // Cleaned up the broken string addition from the temporary code snippet
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let key = format!("projects:{}:subproject:{}", id, subproject_name);
     
     let mut guard = state.note_versions.write().await;
@@ -607,7 +607,7 @@ async fn get_skill_notes(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Json<NotesPayload> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     let key = format!("skills:{}", id);
@@ -622,7 +622,7 @@ async fn save_skill_notes(
     Path(id): Path<String>,
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
     let key = format!("skills:{}", id);
     
     let mut guard = state.note_versions.write().await;
@@ -657,7 +657,7 @@ async fn get_skill_version(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicitly configure the connection to create the file
     let options = SqliteConnectOptions::new()
-        .filename("./Resume_profiles.db") // Looks in the current directory //tmp
+        .filename("/tmp/Resume_profiles.db") // Looks in the current directory //tmp
         .create_if_missing(true);       // The magic flag!
 
     // 2. Build the pool using those options
@@ -671,11 +671,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Initialize databank sectors
-    if let Err(e) = tokio::fs::create_dir_all("./project_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("/tmp/project_notes").await { //tmp
         tracing::error!("Failed to initialize project vault: {}", e);
     }
     // -- NEW: Secure local storage sector for skills --
-    if let Err(e) = tokio::fs::create_dir_all("./skill_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("/tmp/skill_notes").await { //tmp
         tracing::error!("Failed to initialize skill vault: {}", e);
     }
 
@@ -716,7 +716,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([127,0,0,1], 3000)); //change to your ip or proxy_pass it with nginx. //0.0.0.0, 80
+    let addr = SocketAddr::from(([0,0,0,0], 80)); //or proxy_pass [127,0,0,1], 3000 with nginx.
 
     tracing::info!("ARES MAINFRAME ONLINE");
     tracing::info!("Listening on {}", addr);
@@ -3467,6 +3467,31 @@ const FORM_HTML: &str = r##"
         }
     });
 
+    // --- UUID ---
+   function generateUUID() {
+        if (crypto?.randomUUID) {
+            return crypto.randomUUID();
+        }
+
+        const bytes = crypto.getRandomValues(new Uint8Array(16));
+
+        // Set version 4 (0100xxxx)
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+
+        // Set variant (10xxxxxx)
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+        const hex = [...bytes].map(b => b.toString(16).padStart(2, '0'));
+
+        return (
+            hex.slice(0, 4).join('') + '-' +
+            hex.slice(4, 6).join('') + '-' +
+            hex.slice(6, 8).join('') + '-' +
+            hex.slice(8, 10).join('') + '-' +
+            hex.slice(10, 16).join('')
+        );
+    }
+
     // --- BASE64 ASYNC CONVERSION SUBSYSTEM ---
     function convertFileToBase64(file) {
         return new Promise((resolve, reject) => {
@@ -3588,7 +3613,7 @@ const FORM_HTML: &str = r##"
 
     function executeUplink() {
         const skills = Array.from(document.querySelectorAll('.skill-entry')).map(node => ({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             profile_handle: document.getElementById('handle').value,
             name: node.querySelector('.s-name').value,
             category: node.querySelector('.s-cat').value,
@@ -3597,7 +3622,7 @@ const FORM_HTML: &str = r##"
         }));
 
         const experiences = Array.from(document.querySelectorAll('.exp-entry')).map(node => ({
-            id: crypto.randomUUID(),
+            id: generateUUID(),
             profile_handle: document.getElementById('handle').value,
             role: node.querySelector('.e-role').value,
             organization: node.querySelector('.e-org').value,
@@ -3608,7 +3633,7 @@ const FORM_HTML: &str = r##"
         }));
 
         const projects = Array.from(document.querySelectorAll('.proj-entry')).map(node => ({
-            id: "p" + crypto.randomUUID(),
+            id: "p" + generateUUID(),
             profile_handle: document.getElementById('handle').value,
             name: node.querySelector('.p-name').value,
             impact: parseInt(node.querySelector('.p-impact').value || 0),
@@ -3626,7 +3651,7 @@ const FORM_HTML: &str = r##"
                 picture: profilePictureBase64 // Dispatched as an inline base64 string variable
             },
             analytics: {
-                id: crypto.randomUUID(),
+                id: generateUUID(),
                 leadership: parseInt(document.getElementById('leadership').value || 0),
                 technical_depth: parseInt(document.getElementById('technical_depth').value || 0),
                 automation_index: parseInt(document.getElementById('automation_index').value || 0),
