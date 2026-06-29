@@ -553,7 +553,7 @@ async fn get_project_notes(
     Path((id, subproject_name)): Path<(String, String)>,
 ) -> Json<NotesPayload> {
     // Construct a unique filename combining project and sub-project
-    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     // Create a unique cache key for tracking concurrent versions
@@ -571,7 +571,7 @@ async fn save_project_notes(
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
     // Cleaned up the broken string addition from the temporary code snippet
-    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
     let key = format!("projects:{}:subproject:{}", id, subproject_name);
     
     let mut guard = state.note_versions.write().await;
@@ -607,7 +607,7 @@ async fn get_skill_notes(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Json<NotesPayload> {
-    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
+    let file_path = format!("./skill_notes/{}.txt", id); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     let key = format!("skills:{}", id);
@@ -622,7 +622,7 @@ async fn save_skill_notes(
     Path(id): Path<String>,
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
-    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
+    let file_path = format!("./skill_notes/{}.txt", id); //tmp
     let key = format!("skills:{}", id);
     
     let mut guard = state.note_versions.write().await;
@@ -657,7 +657,7 @@ async fn get_skill_version(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicitly configure the connection to create the file
     let options = SqliteConnectOptions::new()
-        .filename("/tmp/Resume_profiles.db") // Looks in the current directory //tmp
+        .filename("./Resume_profiles.db") // Looks in the current directory //tmp
         .create_if_missing(true);       // The magic flag!
 
     // 2. Build the pool using those options
@@ -671,11 +671,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Initialize databank sectors
-    if let Err(e) = tokio::fs::create_dir_all("/tmp/project_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("./project_notes").await { //tmp
         tracing::error!("Failed to initialize project vault: {}", e);
     }
     // -- NEW: Secure local storage sector for skills --
-    if let Err(e) = tokio::fs::create_dir_all("/tmp/skill_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("./skill_notes").await { //tmp
         tracing::error!("Failed to initialize skill vault: {}", e);
     }
 
@@ -712,11 +712,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/skills/update", post(update_skills))
         .route("/api/experiences/update", post(update_experiences))
         .route("/api/projects/update", post(update_projects))
-        //.route("")
+        // additions
+        .route("/api/skills/add", get(get_skills))
+        .route("/api/experiences/add", get(get_experiences))
+        .route("/api/projects/add", get(get_projects))
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([0,0,0,0], 80)); //or proxy_pass [127,0,0,1], 3000 with nginx.
+    let addr = SocketAddr::from(([127,0,0,1], 3000)); //or proxy_pass [127,0,0,1], 3000 with nginx.
 
     tracing::info!("ARES MAINFRAME ONLINE");
     tracing::info!("Listening on {}", addr);
@@ -1299,6 +1302,12 @@ header {
   align-items: center;            /* Centers them vertically */
 }
 
+.panel-actions {
+  display: flex;
+  gap: 12px;                      /* Controls the exact spacing between the two buttons */
+  align-items: center;
+}
+
 .modify-btn {
   background: transparent;
   border: none;
@@ -1768,10 +1777,10 @@ header {
     <div class="panel-title">
     <span>SUBJECT_INTEL</span>
     <button class="modify-btn" data-route="/api/profile/edit" aria-label="Modify">
-    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-    </svg>
+        <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+            <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+        </svg>
     </button>
     </div>
     
@@ -1811,46 +1820,74 @@ header {
   </div>
 </section>
 
-  <section class="panel" style="grid-column: 3; grid-row: 2;">
+<section class="panel" style="grid-column: 3; grid-row: 2;">
     <div class="panel-title">
-    <span>MATRIX_SKILLS</span>
-    <button class="modify-btn" data-route="/api/skills/edit" aria-label="Modify">
-    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-    </svg>
-    </button>
+        <span>MATRIX_SKILLS</span>
+        
+        <div class="panel-actions">
+            <button class="modify-btn" data-route="/api/skills/add" aria-label="Add">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button class="modify-btn" data-route="/api/skills/edit" aria-label="Modify">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+            </button>
+        </div>
     </div>
     <div id="skills-list" style="overflow-y:auto; height:100%;"></div>
-  </section>
+</section>
 
-  <section class="panel" style="grid-column: 1; grid-row: 3;">
+
+<section class="panel" style="grid-column: 1; grid-row: 3;">
     <div class="panel-title">
-    <span>CHRONOS_LOGS</span>
-    <button class="modify-btn" data-route="/api/experiences/edit" aria-label="Modify">
-    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-    </svg>
-    </button>
+        <span>CHRONOS_LOGS</span>
+        
+        <div class="panel-actions">
+            <button class="modify-btn" data-route="/api/experiences/add" aria-label="Add">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button class="modify-btn" data-route="/api/experiences/edit" aria-label="Modify">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+            </button>
+        </div>
     </div>
     <div id="exp-list" style="overflow-y:auto; height:100%;"></div>
-  </section>
+</section>
 
-  <section class="panel" style="grid-column: 2; grid-row: 3;">
+<section class="panel" style="grid-column: 2; grid-row: 3;">
     <div class="panel-title">
-    <span>NEURAL_PROJECTS</span>
-    <button class="modify-btn" data-route="/api/projects/edit" aria-label="Modify">
-    <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
-      <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-      <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-    </svg>
-    </button>
+        <span>NEURAL_PROJECTS</span>
+        
+        <div class="panel-actions">
+            <button class="modify-btn" data-route="/api/projects/add" aria-label="Add">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" y1="5" x2="12" y2="19"></line>
+                    <line x1="5" y1="12" x2="19" y2="12"></line>
+                </svg>
+            </button>
+            <button class="modify-btn" data-route="/api/projects/edit" aria-label="Modify">
+                <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                    <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                </svg>
+            </button>
+        </div>
     </div>
     <div id="projects-list" style="overflow-y:auto; height:100%; display:grid; grid-template-columns:1fr 1fr; gap:10px;"></div>
-  </section>
+</section>
 
-  <section class="panel" style="grid-column: 3; grid-row: 3;">
+<section class="panel" style="grid-column: 3; grid-row: 3;">
     <div class="panel-title">NODE_INSPECTOR</div>
     <div id="inspector-area" style="font-size:12px;">
       <span style='color:#555;'>[ rAdIo PaRaDiSe ]</span>
@@ -1859,7 +1896,7 @@ header {
         Your browser does not support the audio element.
       </audio>
     </div>
-  </section>
+</section>
 </main>
 
 <script>
@@ -2124,37 +2161,48 @@ document.addEventListener('click', (e) => {
 document.getElementById('edit-form').addEventListener('submit', async (e) => {
     e.preventDefault();
 
-    if (!modalRecords || modalRecords.length === 0) return;
+    // 1. Determine our current mode
+    const isAdding = currentActiveRoute.endsWith('/add');
 
-    const currentRecord = modalRecords[currentModalIndex];
+    // 2. Prevent early exit if we are adding the first record
+    if (!isAdding && (!modalRecords || modalRecords.length === 0)) return;
+    
+    // 3. Initialize the payload
+    // Clone the existing record if editing (safe practice), or create a blank object if adding
+    let payloadRecord = isAdding ? {} : { ...modalRecords[currentModalIndex] };
     const inputs = e.target.querySelectorAll('input[name]');
 
-    // 1. Map values and handle Rust's strict Serde types
+    // 4. Map values and handle Rust's strict Serde types
     inputs.forEach(input => {
         const key = input.name;
         const rawValue = input.value.trim();
-        const originalType = typeof currentRecord[key];
+        
+        // Find a reference type: Check the existing record, fallback to a template, or check HTML input type
+        const referenceRecord = (modalRecords && modalRecords.length > 0) ? modalRecords[0] : {};
+        const originalType = isAdding ? typeof referenceRecord[key] : typeof payloadRecord[key];
 
-        if (Array.isArray(currentRecord[key])) {
-            currentRecord[key] = rawValue ? rawValue.split(',').map(item => item.trim()) : [];
-        } else if (originalType === 'number') {
+        if (Array.isArray(referenceRecord[key])) {
+            payloadRecord[key] = rawValue ? rawValue.split(',').map(item => item.trim()) : [];
+        } else if (originalType === 'number' || input.type === 'number') {
             if (rawValue === '') {
-                currentRecord[key] = 0;
+                payloadRecord[key] = 0;
             } else if (rawValue.includes('.')) {
-                currentRecord[key] = parseFloat(rawValue);
+                payloadRecord[key] = parseFloat(rawValue);
             } else {
-                currentRecord[key] = parseInt(rawValue, 10);
+                payloadRecord[key] = parseInt(rawValue, 10);
             }
         } else {
-            currentRecord[key] = rawValue;
+            payloadRecord[key] = rawValue;
         }
     });
 
-    if (!currentRecord.profile_handle && !currentRecord.handle) {
-        currentRecord["profile_handle"] = CURRENT_PROFILE_HANDLE;   
+    // 5. Ensure relational IDs are attached
+    if (!payloadRecord.profile_handle && !payloadRecord.handle) {
+        payloadRecord["profile_handle"] = CURRENT_PROFILE_HANDLE;   
     }
 
-    const updateRoute = currentActiveRoute.replace('/edit', '/update');
+    // 6. Determine routing (Assuming your Rust backend uses /add for inserts and /update for edits)
+    const fetchRoute = currentActiveRoute.replace(/\/(edit|add)/, '/update');
 
     try {
         const submitBtn = e.target.querySelector('.primary-submit');
@@ -2162,10 +2210,10 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
         submitBtn.innerText = '[ TRANSMITTING TYPED DATA... ]';
         submitBtn.disabled = true;
 
-        const response = await fetch(updateRoute, {
+        const response = await fetch(fetchRoute, {
             method: 'POST', 
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(currentRecord)
+            body: JSON.stringify(payloadRecord)
         });
 
         if (!response.ok) throw new Error('Uplink synchronization failed');
@@ -2173,16 +2221,22 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
         submitBtn.style.borderColor = 'var(--army-sage)';
         submitBtn.innerText = '[ DATA LINK SECURED ]';
         
+        // 7. Update frontend state immediately on success so the UI doesn't desync
+        if (isAdding) {
+            if (!modalRecords) modalRecords = [];
+            modalRecords.push(payloadRecord);
+            currentModalIndex = modalRecords.length - 1; // Focus the new record
+        } else {
+            modalRecords[currentModalIndex] = payloadRecord;
+        }
+        
         setTimeout(() => {
             submitBtn.innerText = originalText;
             submitBtn.disabled = false;
             submitBtn.style.borderColor = '';
             
             // ─── IN-PLACE GRAPHICS REWORK ───
-            // 1. Update the background dashboard elements without reloading
-            syncDashboardUI(currentActiveRoute, currentRecord);
-            
-            // 2. Smoothly close the terminal overlay modal
+            syncDashboardUI(currentActiveRoute, payloadRecord);
             closeModal(); 
         }, 1200);
 
@@ -2197,13 +2251,13 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
 });
 
 function syncDashboardUI(route, record) {
-    // SCENARIO 1: Core Operative Profile Subsystem
+    const isAdding = route.endsWith('/add');
+
+    // ─── SCENARIO 1: Core Operative Profile ───
     if (route.includes('/profile')) {
-        // Direct ID targeting prevents layout layout shifts and faulty string matching
         if (record.picture) document.getElementById('profile-picture').src = record.picture;
         if (record.name)    document.getElementById('profile-name').innerText = record.name;
         
-        // Dynamic fallback to handle either key naming convention from Axum
         const activeHandle = record.handle || record.profile_handle;
         if (activeHandle)   document.getElementById('profile-handle').innerText = `[${activeHandle}]`;
         
@@ -2212,66 +2266,105 @@ function syncDashboardUI(route, record) {
         if (record.summary)  document.getElementById('profile-summary').innerText = record.summary;
     }
 
-    // SCENARIO 2: Tactical Skills HUD Bars
+    // ─── SCENARIO 2: Tactical Skills HUD Bars ───
     else if (route.includes('/skills')) {
-        // Instantly lock onto the single element using the record's primary ID key
-        const targetElement = document.querySelector(`#skills-list .hud-bar-container[data-id="${record.id}"]`);
+        const cleanName = record.name ? record.name.replace(/'/g, "\\'") : '';
         
-        if (targetElement) {
-            // Update label text if the name or category changed
-            targetElement.querySelector('.hud-bar-label span:first-child').innerText = `${record.name} [${record.category}]`;
-            
-            // Update score reading and progress gauge width
-            targetElement.querySelector('.hud-bar-label span:last-child').innerText = `${record.score}%`;
-            targetElement.querySelector('.hud-bar-fill').style.width = `${record.score}%`;
-            
-            // Recalculate tactical warning style thresholds
-            targetElement.classList.remove('critical', 'warning');
-            if (record.score > 95) {
-                targetElement.classList.add('critical');
-            } else if (record.score > 90) {
-                targetElement.classList.add('warning');
+        if (isAdding) {
+            let styleClass = '';
+            if (record.score > 95) styleClass = 'critical';
+            else if (record.score > 90) styleClass = 'warning';
+
+            const newSkillHTML = `
+                <div class="hud-bar-container ${styleClass}" data-id="${record.id}" onclick="openEditor('skills', '${record.id}', '${cleanName}')">
+                    <div class="hud-bar-label">
+                        <span>${record.name} [${record.category}]</span>
+                        <span>${record.score}%</span>
+                    </div>
+                    <div class="hud-bar-bg"> 
+                        <div class="hud-bar-fill" style="width: ${record.score}%;"></div>
+                    </div>
+                </div>
+            `;
+            document.getElementById('skills-list').insertAdjacentHTML('beforeend', newSkillHTML);
+        } else {
+            const targetElement = document.querySelector(`#skills-list .hud-bar-container[data-id="${record.id}"]`);
+            if (targetElement) {
+                targetElement.querySelector('.hud-bar-label span:first-child').innerText = `${record.name} [${record.category}]`;
+                targetElement.querySelector('.hud-bar-label span:last-child').innerText = `${record.score}%`;
+                targetElement.querySelector('.hud-bar-fill').style.width = `${record.score}%`;
+                targetElement.setAttribute('onclick', `openEditor('skills', '${record.id}', '${cleanName}')`);
+                
+                targetElement.classList.remove('critical', 'warning');
+                if (record.score > 95) targetElement.classList.add('critical');
+                else if (record.score > 90) targetElement.classList.add('warning');
             }
         }
     }
 
-    // SCENARIO 3: Service Experiences Grid
+    // ─── SCENARIO 3: Service Experiences Grid ───
     else if (route.includes('/experiences')) {
-        // Instantly isolate the exact card matching the database UUID/ID field
-        const targetCard = document.querySelector(`#exp-list .exp-card[data-id="${record.id}"]`);
-        
-        if (targetCard) {
-            targetCard.querySelector('.exp-title').innerText = record.role;
+        if (isAdding) {
+            const skillsTags = (record.skills || []).map(s => `<span class="tag">${s}</span>`).join('');
             
-            const orgSpans = targetCard.querySelectorAll('.exp-org span');
-            if (orgSpans[0]) orgSpans[0].innerText = record.organization;
-            if (orgSpans[1]) orgSpans[1].innerText = `${record.years} YRS`;
-            
-            targetCard.querySelector('.exp-sum').innerText = record.summary;
-            targetCard.querySelector('div:last-child').innerHTML = record.skills
-                .map(s => `<span class="tag">${s}</span>`)
-                .join('');
+            const newExpHTML = `
+                <div class="exp-card" data-id="${record.id}">
+                    <div class="exp-title">${record.role}</div>
+                    <div class="exp-org">
+                        <span>${record.organization}</span>
+                        <span>${record.years} YRS</span>
+                    </div>
+                    <div class="exp-sum">${record.summary}</div>
+                    <div>${skillsTags}</div>
+                </div>
+            `;
+            document.getElementById('exp-list').insertAdjacentHTML('afterbegin', newExpHTML);
+        } else {
+            const targetCard = document.querySelector(`#exp-list .exp-card[data-id="${record.id}"]`);
+            if (targetCard) {
+                targetCard.querySelector('.exp-title').innerText = record.role;
+                
+                const orgSpans = targetCard.querySelectorAll('.exp-org span');
+                if (orgSpans[0]) orgSpans[0].innerText = record.organization;
+                if (orgSpans[1]) orgSpans[1].innerText = `${record.years} YRS`;
+                
+                targetCard.querySelector('.exp-sum').innerText = record.summary;
+                targetCard.querySelector('div:last-child').innerHTML = (record.skills || [])
+                    .map(s => `<span class="tag">${s}</span>`).join('');
+            }
         }
     }
 
-    // SCENARIO 4: Operations & Projects Grid
+    // ─── SCENARIO 4: Operations & Projects Grid ───
     else if (route.includes('/projects')) {
-        // Pinpoint the card instantly using the primary key
-        const targetCard = document.querySelector(`#projects-list .proj-card[data-id="${record.id}"]`);
-        
-        if (targetCard) {
-            // 1. Update the visible text elements safely
-            targetCard.querySelector('.exp-title').innerText = record.name;
-            targetCard.querySelector('.exp-org span:last-child').innerText = `${record.impact}%`;
-            targetCard.querySelector('.exp-sum').innerText = record.description;
-            
-            // 2. Re-escape the text string and patch the click context handler attributes
-            const cleanEscapedName = record.name.replace(/'/g, "\\'");
-            targetCard.setAttribute('onclick', `selectProjectContext('${record.id}', '${cleanEscapedName}')`);
+        const cleanEscapedName = record.name ? record.name.replace(/'/g, "\\'") : 'UNKNOWN';
+
+        if (isAdding) {
+            const newProjHTML = `
+                <div class="proj-card" data-id="${record.id}" style="margin-bottom:0;" onclick="selectProjectContext(\`${record.id}\`, \`${cleanEscapedName}\`)">
+                    <div class="exp-title" style="color:var(--neon-pink);">${record.name}</div>
+                    <div class="exp-org" style="margin-bottom:4px;">
+                        <span>IMPACT INDEX</span>
+                        <span style="color:var(--neon-green)">${record.impact}%</span>
+                    </div>
+                    <div class="exp-sum" style="border-color:var(--neon-cyan); height: 50px; overflow:hidden; text-overflow:ellipsis;">
+                        ${record.description}
+                    </div>
+                </div>
+            `;
+            document.getElementById('projects-list').insertAdjacentHTML('afterbegin', newProjHTML);
+        } else {
+            const targetCard = document.querySelector(`#projects-list .proj-card[data-id="${record.id}"]`);
+            if (targetCard) {
+                targetCard.querySelector('.exp-title').innerText = record.name;
+                targetCard.querySelector('.exp-org span:last-child').innerText = `${record.impact}%`;
+                targetCard.querySelector('.exp-sum').innerText = record.description;
+                // Re-apply click handler using template literal backticks as seen in injection script
+                targetCard.setAttribute('onclick', `selectProjectContext(\`${record.id}\`, \`${cleanEscapedName}\`)`);
+            }
         }
     }
 }
-
 
 async function selectProjectContext(projectId, projectName) {
     // Dynamically rewrite states to track active element selection
@@ -3035,8 +3128,34 @@ function previewFile(event) {
     }
 }
 
+// --- UUID ---
+function generateUUID() {
+    if (crypto?.randomUUID) {
+        return crypto.randomUUID();
+    }
+
+    const bytes = crypto.getRandomValues(new Uint8Array(16));
+
+    // Set version 4 (0100xxxx)
+    bytes[6] = (bytes[6] & 0x0f) | 0x40;
+
+    // Set variant (10xxxxxx)
+    bytes[8] = (bytes[8] & 0x3f) | 0x80;
+
+    const hex = [...bytes].map(b => b.toString(16).padStart(2, '0'));
+
+    return (
+        hex.slice(0, 4).join('') + '-' +
+        hex.slice(4, 6).join('') + '-' +
+        hex.slice(6, 8).join('') + '-' +
+        hex.slice(8, 10).join('') + '-' +
+        hex.slice(10, 16).join('')
+    );
+}
+
 let modalRecords = [];
 let currentModalIndex = 0;
+let isAdding;
 
 async function openEditModal(route) {
     const modal = document.getElementById('dynamic-edit-modal');
@@ -3058,7 +3177,7 @@ async function openEditModal(route) {
         currentModalIndex = 0; // Reset to the first entry
         
         // Hand off layout duties to our dedicated single-record renderer
-        renderCurrentModalRecord();
+        renderCurrentModalRecord(route);
         
     } catch (error) {
         console.error("Fetch Error:", error);
@@ -3066,33 +3185,61 @@ async function openEditModal(route) {
     }
 }
 
-function renderCurrentModalRecord() {
+function renderCurrentModalRecord(route) {
     const formFields = document.getElementById('form-fields');
     const counterDisplay = document.getElementById('modal-record-counter');
+    isAdding = /^\/api\/(skills|experiences|projects)\/add$/.test(route);
     
-    if (!modalRecords || modalRecords.length === 0) {
+    // 1. Handle empty state (Fail-safe if no records AND we aren't adding)
+    if ((!modalRecords || modalRecords.length === 0) && !isAdding) {
         formFields.innerHTML = '<p style="color: var(--army-red);">[ NO DATA RECORDS FOUND ]</p>';
         return;
     }
 
-    // Pull the active record based on current tracking index
-    const profileData = modalRecords[currentModalIndex];
+    // 2. Establish the profile data based on the route
+    let profileData = {};
     
-    // Update tactical tracker readout (e.g., [ ENTRY 01 / 04 ])
-    if (counterDisplay) {
-        const padCurrent = String(currentModalIndex + 1).padStart(2, '0');
-        const padTotal = String(modalRecords.length).padStart(2, '0');
-        counterDisplay.innerText = `[ ENTRY ${padCurrent} / ${padTotal} ]`;
+    if (isAdding) {
+        // Create a blank template by copying keys
+        const templateRecord = (modalRecords && modalRecords.length > 0) ? modalRecords[0] : { id: '', picture: '' }; 
+        
+        for (let key in templateRecord) {
+            if (key === 'id') {
+                if (route === '/api/projects/add') {
+                    profileData[key] = "p" + generateUUID(); 
+                } else {
+                    profileData[key] = generateUUID(); 
+                }
+            } else {
+                if (key !== 'profile_handle') {
+                    profileData[key] = ''; // Blank out all other values
+                } else {
+                    profileData[key] = CURRENT_PROFILE_HANDLE;
+                }
+            }
+        }
+        
+        if (counterDisplay) counterDisplay.innerText = `[ NEW ENTRY ]`;
+    } else {
+        // Pull the active record based on current tracking index
+        profileData = modalRecords[currentModalIndex];
+        
+        if (counterDisplay) {
+            const padCurrent = String(currentModalIndex + 1).padStart(2, '0');
+            const padTotal = String(modalRecords.length).padStart(2, '0');
+            counterDisplay.innerText = `[ ENTRY ${padCurrent} / ${padTotal} ]`;
+        }
     }
 
-    // Render only the single selected record
-    formFields.innerHTML = '<div class="grid-2">'; 
+    // 3. Construct the HTML strings BEFORE injecting into the DOM
+    let inputsHTML = '<div class="grid-2">'; 
+    let avatarHTML = '';
     
     for (const [key, value] of Object.entries(profileData)) {
-        const displayValue = value !== null ? value : ''; 
+        const displayValue = value !== null && value !== undefined ? value : ''; 
         
         if (key === 'picture') {
-            const avatarHTML = `
+            avatarHTML = `
                 <div class="avatar-upload-zone" style="grid-column: 1 / -1;">
                     <div class="avatar-frame" onclick="document.getElementById('file-input').click()">
                         <span class="avatar-label" id="avatar-label" style="display: ${displayValue ? 'none' : 'block'};">
@@ -3104,25 +3251,26 @@ function renderCurrentModalRecord() {
                     </div>
                 </div>
             `;
-            formFields.insertAdjacentHTML('afterbegin', avatarHTML); 
         } else {
             // ─── SECURITY CHECK FOR RESTRICTED IDENTIFIERS ───
-            // Checks if the current key is a system critical record tracker
             const isProtected = ['id', 'handle', 'profile_handle'].includes(key);
             
-            formFields.innerHTML += `
+            inputsHTML += `
                 <div class="input-group">
                     <label>${key.replace(/_/g, ' ')} ${isProtected ? '[ LOCKED ]' : ''}</label>
                     <input type="text" 
-                           name="${key}" 
-                           value="${displayValue}" 
-                           ${isProtected ? 'disabled class="restricted-input"' : ''}>
+                        name="${key}" 
+                        value="${displayValue}" 
+                        ${isProtected ? 'disabled class="restricted-input"' : ''}>
                 </div>
             `;
         }
     }
     
-    formFields.innerHTML += '</div>'; 
+    inputsHTML += '</div>'; 
+    
+    // 4. Inject everything into the DOM at once
+    formFields.innerHTML = avatarHTML + inputsHTML; 
 }
 
 function closeModal() {
