@@ -30,12 +30,19 @@ struct AppState {
     handle: String,
     tx: broadcast::Sender<String>,
     current_headline: Arc<RwLock<String>>,
+    users: Vec<User>,
     profiles: Vec<Profile>,
     skills: Vec<Vec<Skill>>,
     experiences: Vec<Vec<Experience>>,
     projects: Vec<Vec<Project>>,
     analytics_matrix: Vec<Analytics>,
     note_versions: Arc<RwLock<HashMap<String, u64>>>,
+}
+
+#[derive(Clone, Serialize, Deserialize, FromRow)]
+pub struct User {
+    pub profile_handle: String,
+    pub password: String,
 }
 
 #[derive(Clone, Serialize, Deserialize, FromRow)]
@@ -296,8 +303,30 @@ pub async fn init_db(pool: &sqlx::SqlitePool) -> Result<(), sqlx::Error> {
                 REFERENCES projects(id) ON DELETE CASCADE
         );
 
+        CREATE TABLE IF NOT EXISTS users (
+            profile_handle TEXT PRIMARY KEY,
+            password TEXT NOT NULL
+        );
+
         "#
     )
+    .execute(pool)
+    .await?;
+
+    Ok(())
+}
+
+pub async fn save_user(pool: &SqlitePool, user: &User) -> Result<(), sqlx::Error> {
+    sqlx::query(
+        r#"
+        INSERT INTO users (profile_handle, password) 
+        VALUES (?, ?)
+        ON CONFLICT(profile_handle) DO UPDATE SET 
+            password =  excluded.password
+        "#,
+    )
+    .bind(&user.profile_handle)
+    .bind(&user.password)
     .execute(pool)
     .await?;
 
@@ -455,6 +484,14 @@ pub async fn save_analytics(pool: &SqlitePool, analytics: &Analytics) -> Result<
     .await?;
 
     Ok(())
+}
+
+async fn get_user_password(pool: &SqlitePool, profile_handle: &str) -> Result<User, sqlx::Error> {
+    let user = sqlx::query_as::<_, User>("SELECT * FROM users WHERE profile_handle = ?")
+        .bind(profile_handle)
+        .fetch_one(pool)
+        .await?;
+    Ok(user)
 }
 
 async fn fetch_dashboard_for_handle(pool: &SqlitePool, handle: &str) -> Result<Dashboard, sqlx::Error> {
@@ -716,6 +753,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/skills/add", get(get_skills))
         .route("/api/experiences/add", get(get_experiences))
         .route("/api/projects/add", get(get_projects))
+        // login and password
+        .route("/api/login", post(logon))
+        .route("/api/password", get(get_password))
+        .route("/api/password/change", post(update_password))
         .layer(CompressionLayer::new())
         .with_state(state);
 
@@ -736,6 +777,13 @@ fn seed_data(pool: SqlitePool) -> AppState {
     let current_headline = Arc::new(RwLock::new("ARES MAINFRAME // euz2qbcxiuh3lxgrdu4iwjkik435hlfo7idaymynd7ftbqrx434y5oid.onion".to_string()));
     let (tx, _) = broadcast::channel::<String>(16);
     let handle = "N3_operative_001".into();
+
+    let users = vec![
+        User {
+            profile_handle: "N3_operative_001".into(),
+            password: "admin".into(),
+        },
+    ];
 
     let profiles = vec![
       Profile {
@@ -855,6 +903,7 @@ fn seed_data(pool: SqlitePool) -> AppState {
         handle,
         tx,
         current_headline,
+        users,
         profiles,
         skills,
         experiences,
@@ -884,6 +933,12 @@ async fn dashboard(
         .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
 
         if existing_profiles.len() == 0{
+          
+          for user in &state.users{
+            if let Err(e) = save_user(pool, &user).await {
+                tracing::error!("Failed to save user {}: {:?}", user.profile_handle, e);
+            }
+          }
 
           for profile in &state.profiles{
             if let Err(e) = save_profile(pool, &profile).await {
@@ -1017,6 +1072,18 @@ pub async fn new_subprojects(
     Ok(Json(new_sub))
 }
 
+pub async fn get_password(
+    State(state): State<Arc<AppState>>,
+    Query(params): Query<EditQuery>,
+) -> Result<Json<User>, axum::http::StatusCode> {
+    let pool = &state.pool;
+
+    let user = get_user_password(pool, &params.profile_handle).await.map_err(|_| StatusCode::NOT_FOUND)?;
+
+    Ok(Json(user))
+}
+
+
 pub async fn get_profile(
     State(state): State<Arc<AppState>>,
     Query(params): Query<EditQuery>,
@@ -1099,6 +1166,56 @@ pub async fn get_experiences(
     .map_err(|_| StatusCode::NOT_FOUND)?;
 
     Ok(Json(experiences))
+}
+
+pub async fn logon(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<User>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+
+    // 1. Pass by reference (assuming get_user_password takes a &str or &String)
+    // 2. Map the error to the correct tuple (StatusCode, String)
+    let user = get_user_password(pool, &payload.profile_handle)
+        .await
+        .map_err(|_| {
+            (
+                StatusCode::NOT_FOUND,
+                "[ LOGIN FAILED ]: Target handle not found in registry.".to_string(),
+            )
+        })?;
+
+    // 3. Check credentials and return a proper 401 Err tuple if they fail
+    if user.password != payload.password {
+        return Err((
+            StatusCode::UNAUTHORIZED,
+            "[ LOGIN FAILED ]: Invalid designation (password mismatch).".to_string(),
+        ));
+    }
+    
+    // 4. Access granted
+    Ok(StatusCode::OK)
+}
+
+pub async fn update_password(
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<User>,
+) -> Result<StatusCode, (StatusCode, String)> {
+    let pool = &state.pool;
+    // Extract the profile_handle directly from the incoming payload
+
+    // Re-use your database utility function cleanly
+    save_user(&pool, &payload)
+        .await
+        .map_err(|e| {
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                format!("[ DATABASE TRANSACTION CORRUPTED ]: {}", e),
+            )
+        })?;
+
+    // Return a 200 OK status code back to your JavaScript frontend fetch caller
+    Ok(StatusCode::OK)
 }
 
 pub async fn update_profile(
@@ -1754,6 +1871,10 @@ header {
   transform: scale(0.99);
 }
 
+.hidden {
+  display: none !important;
+}
+
 </style>
 </head>
 <body>
@@ -1769,14 +1890,15 @@ header {
       <button class="arrow prev" aria-label="Previous"></button>
       <button class="arrow next" aria-label="Next"></button>
     </div>
+    <button id="openLoginBtn" class="uplink-btn">AUTHENTICATE</button>
     <button class="uplink-btn" onclick="initUplink()">INITIALIZE UPLINK</button>
-    <div class="header-warn">[ UNAUTHORIZED UPLINK DETECTED ]</div>
+    <button id="openModalBtn" class="uplink-btn hidden">INITIATE OVERRIDE</button>
   </header>
 
   <section class="panel" style="grid-column: 1; grid-row: 2;">
     <div class="panel-title">
     <span>SUBJECT_INTEL</span>
-    <button class="modify-btn" data-route="/api/profile/edit" aria-label="Modify">
+    <button class="modify-btn hidden" data-route="/api/profile/edit" id="intel_modify" aria-label="Modify">
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
             <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -1825,13 +1947,13 @@ header {
         <span>MATRIX_SKILLS</span>
         
         <div class="panel-actions">
-            <button class="modify-btn" data-route="/api/skills/add" aria-label="Add">
+            <button class="modify-btn hidden" data-route="/api/skills/add" id="skill_add" aria-label="Add">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
             </button>
-            <button class="modify-btn" data-route="/api/skills/edit" aria-label="Modify">
+            <button class="modify-btn hidden" data-route="/api/skills/edit" id="skill_modify" aria-label="Modify">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -1848,13 +1970,13 @@ header {
         <span>CHRONOS_LOGS</span>
         
         <div class="panel-actions">
-            <button class="modify-btn" data-route="/api/experiences/add" aria-label="Add">
+            <button class="modify-btn hidden" data-route="/api/experiences/add" id="experience_add" aria-label="Add">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
             </button>
-            <button class="modify-btn" data-route="/api/experiences/edit" aria-label="Modify">
+            <button class="modify-btn hidden" data-route="/api/experiences/edit" id="experience_modify" aria-label="Modify">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -1870,13 +1992,13 @@ header {
         <span>NEURAL_PROJECTS</span>
         
         <div class="panel-actions">
-            <button class="modify-btn" data-route="/api/projects/add" aria-label="Add">
+            <button class="modify-btn hidden" data-route="/api/projects/add" id="project_add" aria-label="Add">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" y1="5" x2="12" y2="19"></line>
                     <line x1="5" y1="12" x2="19" y2="12"></line>
                 </svg>
             </button>
-            <button class="modify-btn" data-route="/api/projects/edit" aria-label="Modify">
+            <button class="modify-btn hidden" data-route="/api/projects/edit" id="project_modify" aria-label="Modify">
                 <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
                     <path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
@@ -1967,6 +2089,61 @@ header {
       <button type="submit" class="primary-submit">Save Current Record</button>
     </form>
 
+  </div>
+</div>
+
+<div id="tacticalModal" class="matrix-modal-overlay">
+  <div class="matrix-modal-content">
+    
+    <div class="modal-header">
+      <h3>// SEC_OVERRIDE</h3>
+      <button id="closeModalBtn" class="close-modal-btn">[X] ABORT</button>
+    </div>
+
+    <div id="statusConsole" class="exp-sum" style="margin-bottom: 20px; font-family: 'Courier New', monospace; font-size: 14px;">
+      > AWAITING CREDENTIALS...
+    </div>
+
+    <form id="passwordForm">
+      
+      <div class="input-group">
+        <label for="profileHandle">> TARGET_HANDLE</label>
+        <div style="display: flex; gap: 10px;">
+          <input type="text" id="profileHandle" placeholder="Enter profile handle..." required style="flex: 1;">
+          <button type="button" id="verifyBtn" class="btn">VERIFY</button>
+        </div>
+      </div>
+
+      <div class="input-group" id="passwordGroup" style="opacity: 0.4; pointer-events: none; transition: opacity 0.3s;">
+        <label for="newPassword">> NEW_PASSWORD</label>
+        <input type="password" id="newPassword" placeholder="Enter new designation..." disabled required>
+      </div>
+
+      <button type="submit" id="submitBtn" class="primary-submit" disabled style="opacity: 0.5; cursor: not-allowed;">
+        COMMIT_CHANGES
+      </button>
+
+    </form>
+  </div>
+</div>
+
+<div id="loginModal" class="matrix-modal-overlay">
+  <div class="matrix-modal-content">
+    <div class="modal-header">
+      <h3>// AUTHENTICATION</h3>
+      <button id="closeLoginBtn" class="close-modal-btn">[X]</button>
+    </div>
+    <form id="loginForm">
+      <div class="input-group">
+        <label for="loginHandle">> HANDLE</label>
+        <input type="text" id="loginHandle" required>
+      </div>
+      <div class="input-group">
+        <label for="loginPassword">> PASSWORD</label>
+        <input type="password" id="loginPassword" required>
+      </div>
+      <button type="submit" class="primary-submit">INITIATE_HANDSHAKE</button>
+    </form>
   </div>
 </div>
 
@@ -2249,6 +2426,211 @@ document.getElementById('edit-form').addEventListener('submit', async (e) => {
         submitBtn.disabled = false;
     }
 });
+
+document.addEventListener('DOMContentLoaded', () => {
+  
+  // ==========================================
+  // 1. MODAL UTILITY HELPERS
+  // ==========================================
+  
+  // Reusable function to bind open, close, and reset events to any modal
+  const initModal = (openBtnId, modalId, closeBtnId, onOpenCallback, onCloseCallback) => {
+    const openBtn = document.getElementById(openBtnId);
+    const modal = document.getElementById(modalId);
+    const closeBtn = document.getElementById(closeBtnId);
+    
+    if (!openBtn || !modal || !closeBtn) return;
+    
+    openBtn.addEventListener('click', () => {
+      modal.classList.add('active');
+      if (onOpenCallback) onOpenCallback();
+    });
+    
+    closeBtn.addEventListener('click', () => {
+      modal.classList.remove('active');
+      // Wait for CSS transition (300ms) before executing cleanup
+      if (onCloseCallback) setTimeout(onCloseCallback, 300);
+    });
+  };
+
+  // ==========================================
+  // 2. AUTHENTICATION (LOGIN) LOGIC
+  // ==========================================
+  
+  const loginForm = document.getElementById('loginForm');
+  const openLoginBtn = document.getElementById('openLoginBtn');
+  const loginModal = document.getElementById('loginModal');
+  
+  // Array of element IDs to reveal upon successful authentication
+  const secureElementsIds = [
+    'openModalBtn', 'intel_modify', 'skill_add', 'skill_modify', 
+    'experience_add', 'experience_modify', 'project_add', 'project_modify'
+  ];
+
+  // Initialize Login Modal
+  initModal('openLoginBtn', 'loginModal', 'closeLoginBtn');
+
+  if (loginForm) {
+    loginForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      
+      const handle = document.getElementById('loginHandle').value;
+      const password = document.getElementById('loginPassword').value;
+
+      try {
+        const response = await fetch('/api/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ profile_handle: handle, password })
+        });
+
+        if (response.ok) {
+          console.log("Authentication granted.");
+          
+          // Hide Login Trigger
+          if (openLoginBtn) openLoginBtn.classList.add('hidden');
+          
+          // Reveal Secure UI Elements safely
+          secureElementsIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.classList.remove('hidden');
+          });
+          
+          // Close Modal & Notify
+          loginModal.classList.remove('active');
+          alert("ACCESS GRANTED: UPLINK ESTABLISHED");
+        } else {
+          alert("ACCESS DENIED: INVALID CREDENTIALS");
+        }
+      } catch (err) {
+        console.error("Auth error:", err);
+      }
+    });
+  }
+
+  // ==========================================
+  // 3. PASSWORD MODIFICATION LOGIC
+  // ==========================================
+  
+  const passwordForm = document.getElementById('passwordForm');
+  const verifyBtn = document.getElementById('verifyBtn');
+  const profileHandleInput = document.getElementById('profileHandle');
+  const newPasswordInput = document.getElementById('newPassword');
+  const passwordGroup = document.getElementById('passwordGroup');
+  const submitBtn = document.getElementById('submitBtn');
+  const statusConsole = document.getElementById('statusConsole');
+  const tacticalModal = document.getElementById('tacticalModal');
+  
+  let currentUserData = null;
+
+  // Console output helper
+  const logToConsole = (msg, colorVar) => {
+    if (!statusConsole) return;
+    statusConsole.textContent = `> ${msg}`;
+    statusConsole.style.borderLeftColor = `var(${colorVar})`;
+    statusConsole.style.color = `var(${colorVar})`;
+  };
+
+  // State cleanup helper
+  const resetPasswordModal = () => {
+    if (passwordForm) passwordForm.reset();
+    currentUserData = null;
+    
+    if (passwordGroup) {
+      passwordGroup.style.opacity = '0.4';
+      passwordGroup.style.pointerEvents = 'none';
+    }
+    if (newPasswordInput) newPasswordInput.disabled = true;
+    
+    if (submitBtn) {
+      submitBtn.disabled = true;
+      submitBtn.style.opacity = '0.5';
+      submitBtn.style.cursor = 'not-allowed';
+    }
+    
+    logToConsole('AWAITING CREDENTIALS...', '--army-khaki');
+  };
+
+  // Initialize Tactical Modal (pass the reset function to execute on close)
+  initModal('openModalBtn', 'tacticalModal', 'closeModalBtn', null, resetPasswordModal);
+
+  // Phase 1: Verify User via GET
+  if (verifyBtn) {
+    verifyBtn.addEventListener('click', async () => {
+      const handle = profileHandleInput.value.trim();
+      
+      if (!handle) {
+        return logToConsole('ERROR: HANDLE REQUIRED', '--army-red');
+      }
+
+      logToConsole('FETCHING PROFILE DATA...', '--army-sand');
+
+      try {
+        const response = await fetch(`/api/password?profile_handle=${encodeURIComponent(handle)}`);
+        
+        if (!response.ok) throw new Error(`STATUS ${response.status}`);
+
+        currentUserData = await response.json();
+        logToConsole('PROFILE VERIFIED. ENTER NEW DESIGNATION.', '--army-sage');
+        
+        // Unlock Phase 2 UI
+        passwordGroup.style.opacity = '1';
+        passwordGroup.style.pointerEvents = 'auto';
+        newPasswordInput.disabled = false;
+        
+        submitBtn.disabled = false;
+        submitBtn.style.opacity = '1';
+        submitBtn.style.cursor = 'pointer';
+        
+        newPasswordInput.focus();
+
+      } catch (error) {
+        logToConsole(`VERIFICATION FAILED: ${error.message}`, '--army-red');
+        currentUserData = null;
+      }
+    });
+  }
+
+  // Phase 2: Commit Password Change via POST
+  if (passwordForm) {
+    passwordForm.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!currentUserData) return;
+
+      logToConsole('COMMITTING TRANSACTION...', '--army-sand');
+
+      const payload = {
+        ...currentUserData,
+        password: newPasswordInput.value 
+      };
+
+      try {
+        const response = await fetch('/api/password/change', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          throw new Error(errorText || `STATUS ${response.status}`);
+        }
+
+        logToConsole('UPDATE SUCCESSFUL. TRANSACTION CLOSED.', '--army-sage');
+        
+        // Auto-close modal after success
+        setTimeout(() => {
+          tacticalModal.classList.remove('active');
+          setTimeout(resetPasswordModal, 300); // Reset state after closing
+        }, 2000);
+
+      } catch (error) {
+        logToConsole(`UPDATE FAILED: ${error.message}`, '--army-red');
+      }
+    });
+  }
+});
+
 
 function syncDashboardUI(route, record) {
     const isAdding = route.endsWith('/add');
