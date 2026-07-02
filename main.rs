@@ -3965,7 +3965,7 @@ const FORM_HTML: &str = r##"
                 </div>
                 <div id="projects-container"></div>
 
-                <button type="button" class="action-btn" onclick="executeUplink()">Transmit Hybrid Payload >_</button>
+                <button type="button" class="action-btn" onclick="executeUplink()">Submit Profile >_</button>
             </form>
         </div>
     </div>
