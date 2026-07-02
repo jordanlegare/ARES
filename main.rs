@@ -882,7 +882,7 @@ fn seed_data(pool: SqlitePool) -> AppState {
     .iter()
     .filter_map(|group| {
         // Assume the first skill's ID defines the group ID
-        let group_id = group.first()?.id.clone();
+        let group_id = "N3_operative_001".into();
         
         let avg_score = group.iter().map(|s| s.score as u32).sum::<u32>() / group.len() as u32;
 
@@ -1897,7 +1897,7 @@ header {
 
   <section class="panel" style="grid-column: 1; grid-row: 2;">
     <div class="panel-title">
-    <span>SUBJECT_INTEL</span>
+    <span>PROFILE</span>
     <button class="modify-btn hidden" data-route="/api/profile/edit" id="intel_modify" aria-label="Modify">
         <svg viewBox="0 0 24 24" width="16" height="16" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round">
             <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
@@ -1944,7 +1944,7 @@ header {
 
 <section class="panel" style="grid-column: 3; grid-row: 2;">
     <div class="panel-title">
-        <span>MATRIX_SKILLS</span>
+        <span>TRANSFERABLES</span>
         
         <div class="panel-actions">
             <button class="modify-btn hidden" data-route="/api/skills/add" id="skill_add" aria-label="Add">
@@ -1967,7 +1967,7 @@ header {
 
 <section class="panel" style="grid-column: 1; grid-row: 3;">
     <div class="panel-title">
-        <span>CHRONOS_LOGS</span>
+        <span>EXPERIENCE</span>
         
         <div class="panel-actions">
             <button class="modify-btn hidden" data-route="/api/experiences/add" id="experience_add" aria-label="Add">
@@ -1989,7 +1989,7 @@ header {
 
 <section class="panel" style="grid-column: 2; grid-row: 3;">
     <div class="panel-title">
-        <span>NEURAL_PROJECTS</span>
+        <span>PROJECTS</span>
         
         <div class="panel-actions">
             <button class="modify-btn hidden" data-route="/api/projects/add" id="project_add" aria-label="Add">
@@ -2010,7 +2010,7 @@ header {
 </section>
 
 <section class="panel" style="grid-column: 3; grid-row: 3;">
-    <div class="panel-title">NODE_INSPECTOR</div>
+    <div class="panel-title">SEARCH</div>
     <div id="inspector-area" style="font-size:12px;">
       <span style='color:#555;'>[ rAdIo PaRaDiSe ]</span>
       <audio controls preload="none">
@@ -3676,7 +3676,7 @@ const FORM_HTML: &str = r##"
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>NEURAL UPLINK // HYBRID_CONSTRUCT</title>
+    <title>ADD // PROFILE</title>
     <style>
         :root {
             /* Tactical Palette */
@@ -3906,21 +3906,21 @@ const FORM_HTML: &str = r##"
 <body>
 
     <div class="dashboard">
-        <h1>Sys_Admin // Core</h1>
+        <h1>ADD // PROFILE</h1>
         <p style="margin-bottom: 2rem;">SYSTEM STATUS: SECURE</p>
-        <button class="trigger-btn" onclick="openUplink()">> Initiate Uplink</button>
+        <button class="trigger-btn" onclick="openUplink()">> START</button>
     </div>
 
     <div id="uplink-modal" class="modal-overlay" onclick="closeOnBackgroundClick(event)">
         <div class="modal-content">
             <button class="btn-close" onclick="closeUplink()">[ X ] Abort</button>
             
-            <h1 class="modal-title">System_Override // Hybrid_Upload</h1>
+            <h1 class="modal-title">PROFILE // SUBMISSION FORM</h1>
 
             <form id="uplink-form">
                 
                 <div class="avatar-upload-zone">
-                    <label style="margin-bottom: 0.5rem;">[ VISUAL_CONSTRUCT_MATRIX ]</label>
+                    <label style="margin-bottom: 0.5rem;">[ PICTURE ]</label>
                     <div class="avatar-frame" id="avatar-click-zone" onclick="triggerFileSearch()">
                         <div class="avatar-label" id="avatar-text-status">// Click to mount core profile image (.JPG)</div>
                         <img id="avatar-render-target" alt="Neural Interface Matrix Identity Construct">
@@ -3928,7 +3928,7 @@ const FORM_HTML: &str = r##"
                     <input type="file" id="identity-picture-input" accept=".jpg, .jpeg" style="display: none;" onchange="validateAndDisplayPicture(event)">
                 </div>
 
-                <h2>[01] Identity Matrix (Static)</h2>
+                <h2>[01] PROFILE // IDENTITY (Static)</h2>
                 <div class="grid-2">
                     <div class="input-group"><label>Handle</label><input type="text" id="handle" placeholder="@netrunner_99"></div>
                     <div class="input-group"><label>Real Name</label><input type="text" id="name" placeholder="Case"></div>
@@ -3937,7 +3937,7 @@ const FORM_HTML: &str = r##"
                 </div>
                 <div class="input-group"><label>Summary</label><textarea id="summary" placeholder="Enter high-level directive..."></textarea></div>
 
-                <h2>[02] Neural Diagnostics (Static)</h2>
+                <h2>[02] SELF-EVALUATION (Static)</h2>
                 <div class="grid-3">
                     <div class="input-group"><label>Leadership (0-100)</label><input type="number" id="leadership" min="0" max="100"></div>
                     <div class="input-group"><label>Tech Depth (0-100)</label><input type="number" id="technical_depth" min="0" max="100"></div>
@@ -3948,20 +3948,20 @@ const FORM_HTML: &str = r##"
                 </div>
 
                 <div class="section-header">
-                    <h2>[03] Skill Subroutines (Dynamic)</h2>
-                    <button type="button" class="btn-add" onclick="addNode('skills-container', generateSkillHTML)">+ Inject Skill</button>
+                    <h2>[03] SKILLS (Dynamic)</h2>
+                    <button type="button" class="btn-add" onclick="addNode('skills-container', generateSkillHTML)">+ Add Skill</button>
                 </div>
                 <div id="skills-container"></div>
 
                 <div class="section-header">
-                    <h2>[04] Experience Logs (Dynamic)</h2>
-                    <button type="button" class="btn-add" onclick="addNode('experiences-container', generateExperienceHTML)">+ Inject Log</button>
+                    <h2>[04] Experiences (Dynamic)</h2>
+                    <button type="button" class="btn-add" onclick="addNode('experiences-container', generateExperienceHTML)">+ Add Experience</button>
                 </div>
                 <div id="experiences-container"></div>
 
                 <div class="section-header">
-                    <h2>[05] Project Archives (Dynamic)</h2>
-                    <button type="button" class="btn-add" onclick="addNode('projects-container', generateProjectHTML)">+ Inject Project</button>
+                    <h2>[05] Projects (Dynamic)</h2>
+                    <button type="button" class="btn-add" onclick="addNode('projects-container', generateProjectHTML)">+ Add Project</button>
                 </div>
                 <div id="projects-container"></div>
 
@@ -4181,7 +4181,7 @@ const FORM_HTML: &str = r##"
                 picture: profilePictureBase64 // Dispatched as an inline base64 string variable
             },
             analytics: {
-                id: generateUUID(),
+                id: document.getElementById('handle').value,
                 leadership: parseInt(document.getElementById('leadership').value || 0),
                 technical_depth: parseInt(document.getElementById('technical_depth').value || 0),
                 automation_index: parseInt(document.getElementById('automation_index').value || 0),
