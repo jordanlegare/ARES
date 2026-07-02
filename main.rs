@@ -590,7 +590,7 @@ async fn get_project_notes(
     Path((id, subproject_name)): Path<(String, String)>,
 ) -> Json<NotesPayload> {
     // Construct a unique filename combining project and sub-project
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     // Create a unique cache key for tracking concurrent versions
@@ -608,7 +608,7 @@ async fn save_project_notes(
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
     // Cleaned up the broken string addition from the temporary code snippet
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/tmp/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let key = format!("projects:{}:subproject:{}", id, subproject_name);
     
     let mut guard = state.note_versions.write().await;
@@ -644,7 +644,7 @@ async fn get_skill_notes(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Json<NotesPayload> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     let key = format!("skills:{}", id);
@@ -659,7 +659,7 @@ async fn save_skill_notes(
     Path(id): Path<String>,
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/tmp/skill_notes/{}.txt", id); //tmp
     let key = format!("skills:{}", id);
     
     let mut guard = state.note_versions.write().await;
@@ -694,7 +694,7 @@ async fn get_skill_version(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicitly configure the connection to create the file
     let options = SqliteConnectOptions::new()
-        .filename("./Resume_profiles.db") // Looks in the current directory //tmp
+        .filename("/tmp/Resume_profiles.db") // Looks in the current directory //tmp
         .create_if_missing(true);       // The magic flag!
 
     // 2. Build the pool using those options
@@ -708,11 +708,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Initialize databank sectors
-    if let Err(e) = tokio::fs::create_dir_all("./project_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("/tmp/project_notes").await { //tmp
         tracing::error!("Failed to initialize project vault: {}", e);
     }
     // -- NEW: Secure local storage sector for skills --
-    if let Err(e) = tokio::fs::create_dir_all("./skill_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("/tmp/skill_notes").await { //tmp
         tracing::error!("Failed to initialize skill vault: {}", e);
     }
 
@@ -760,7 +760,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([127,0,0,1], 3000)); //or proxy_pass [127,0,0,1], 3000 with nginx.
+    let addr = SocketAddr::from(([0,0,0,0], 80)); //or proxy_pass [127,0,0,1], 3000 with nginx.
 
     tracing::info!("ARES MAINFRAME ONLINE");
     tracing::info!("Listening on {}", addr);
@@ -1944,7 +1944,7 @@ header {
 
 <section class="panel" style="grid-column: 3; grid-row: 2;">
     <div class="panel-title">
-        <span>TRANSFERABLES</span>
+        <span>TRANSFERABLE SKILLS</span>
         
         <div class="panel-actions">
             <button class="modify-btn hidden" data-route="/api/skills/add" id="skill_add" aria-label="Add">
@@ -1967,7 +1967,7 @@ header {
 
 <section class="panel" style="grid-column: 1; grid-row: 3;">
     <div class="panel-title">
-        <span>EXPERIENCE</span>
+        <span>EXPERIENCES</span>
         
         <div class="panel-actions">
             <button class="modify-btn hidden" data-route="/api/experiences/add" id="experience_add" aria-label="Add">
@@ -3267,8 +3267,8 @@ async function openEditor(type, id, name, subProjName) {
   hasUnsavedChanges = false;
   subProjectName = subProjName;
   
-  const prefix = type === 'skills' ? 'MATRIX_SKILL' : 'NEURAL_PROJ';
-  document.getElementById('editor-title-text').innerText = `${prefix} // ${name} // INTEL_LOG`;
+  const prefix = type === 'skills' ? 'SKILL' : 'PROJECT';
+  document.getElementById('editor-title-text').innerText = `${prefix} // ${name} // DETAILS`;
   document.getElementById('editor-modal').style.display = 'flex';
   
   const textarea = document.getElementById('editor-textarea');
@@ -3278,7 +3278,7 @@ async function openEditor(type, id, name, subProjName) {
   const btn = document.getElementById('btn-save');
   btn.disabled = false;
   btn.style.borderColor = ""; // Reset custom styles
-  btn.innerText = "COMMIT TO DATABANK";
+  btn.innerText = "SEND";
 
   let res;
 
@@ -3948,19 +3948,19 @@ const FORM_HTML: &str = r##"
                 </div>
 
                 <div class="section-header">
-                    <h2>[03] SKILLS (Dynamic)</h2>
+                    <h2>[03] TRANSFERABLE SKILLS (Dynamic)</h2>
                     <button type="button" class="btn-add" onclick="addNode('skills-container', generateSkillHTML)">+ Add Skill</button>
                 </div>
                 <div id="skills-container"></div>
 
                 <div class="section-header">
-                    <h2>[04] Experiences (Dynamic)</h2>
+                    <h2>[04] EXPERIENCES (Dynamic)</h2>
                     <button type="button" class="btn-add" onclick="addNode('experiences-container', generateExperienceHTML)">+ Add Experience</button>
                 </div>
                 <div id="experiences-container"></div>
 
                 <div class="section-header">
-                    <h2>[05] Projects (Dynamic)</h2>
+                    <h2>[05] PROJECTS (Dynamic)</h2>
                     <button type="button" class="btn-add" onclick="addNode('projects-container', generateProjectHTML)">+ Add Project</button>
                 </div>
                 <div id="projects-container"></div>
