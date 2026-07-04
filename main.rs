@@ -6,6 +6,7 @@ use axum::{
     Json,
     Router,
     response::sse::{Event, Sse},
+    extract::ConnectInfo,
 };
 
 use futures_util::stream::{self, Stream};
@@ -23,6 +24,12 @@ use std::collections::HashMap;
 use sqlx::sqlite::SqlitePool;
 use sqlx::sqlite::{SqliteConnectOptions, SqlitePoolOptions};
 use sqlx::{Row, FromRow};
+
+use tokio::time::sleep;
+// use std::process::Command; //incompatible with Onion Omega2 Pro without SDK
+use std::fs;
+use std::ffi::CString;
+use nix::unistd::{fork, ForkResult, execvp};
 
 #[derive(Clone)]
 struct AppState {
@@ -590,7 +597,7 @@ async fn get_project_notes(
     Path((id, subproject_name)): Path<(String, String)>,
 ) -> Json<NotesPayload> {
     // Construct a unique filename combining project and sub-project
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/root/Resume/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     // Create a unique cache key for tracking concurrent versions
@@ -608,7 +615,7 @@ async fn save_project_notes(
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
     // Cleaned up the broken string addition from the temporary code snippet
-    let file_path = format!("./project_notes/{}_{}.txt", id, subproject_name); //tmp
+    let file_path = format!("/root/Resume/project_notes/{}_{}.txt", id, subproject_name); //tmp
     let key = format!("projects:{}:subproject:{}", id, subproject_name);
     
     let mut guard = state.note_versions.write().await;
@@ -644,7 +651,7 @@ async fn get_skill_notes(
     State(state): State<Arc<AppState>>,
     Path(id): Path<String>,
 ) -> Json<NotesPayload> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/root/Resume/skill_notes/{}.txt", id); //tmp
     let text = tokio::fs::read_to_string(&file_path).await.unwrap_or_default();
     
     let key = format!("skills:{}", id);
@@ -659,7 +666,7 @@ async fn save_skill_notes(
     Path(id): Path<String>,
     Json(payload): Json<SaveNotesRequest>,
 ) -> Result<Json<SaveNotesResponse>, axum::http::StatusCode> {
-    let file_path = format!("./skill_notes/{}.txt", id); //tmp
+    let file_path = format!("/root/Resume/skill_notes/{}.txt", id); //tmp
     let key = format!("skills:{}", id);
     
     let mut guard = state.note_versions.write().await;
@@ -694,7 +701,7 @@ async fn get_skill_version(
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // 1. Explicitly configure the connection to create the file
     let options = SqliteConnectOptions::new()
-        .filename("./Resume_profiles.db") // Looks in the current directory //tmp
+        .filename("/root/Resume/Resume_profiles.db") // Looks in the current directory //tmp
         .create_if_missing(true);
 
     // 2. Build the pool using those options
@@ -708,11 +715,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
 
     // Initialize databank sectors
-    if let Err(e) = tokio::fs::create_dir_all("./project_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("/root/Resume/project_notes").await { //tmp
         tracing::error!("Failed to initialize project vault: {}", e);
     }
     // -- NEW: Secure local storage sector for skills --
-    if let Err(e) = tokio::fs::create_dir_all("./skill_notes").await { //tmp
+    if let Err(e) = tokio::fs::create_dir_all("root/Resume/skill_notes").await { //tmp
         tracing::error!("Failed to initialize skill vault: {}", e);
     }
 
@@ -757,16 +764,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/login", post(logon))
         .route("/api/password", get(get_password))
         .route("/api/password/change", post(update_password))
+        //internet connections granting
+        .route("/connect", get(handle_connect))
         .layer(CompressionLayer::new())
         .with_state(state);
 
-    let addr = SocketAddr::from(([127,0,0,1], 3000)); //or proxy_pass [127,0,0,1], 3000 with nginx.
+    let addr = SocketAddr::from(([0,0,0,0], 80)); //or proxy_pass [127,0,0,1], 3000 with nginx.
 
     tracing::info!("ARES MAINFRAME ONLINE");
     tracing::info!("Listening on {}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.expect("failed to bind listener");
-    if let Err(err) = axum::serve(listener, app).await {
+    if let Err(err) = axum::serve(listener, app.into_make_service_with_connect_info::<SocketAddr>()).await {
         tracing::error!("server error: {}", err);
     }
 
@@ -1305,6 +1314,57 @@ pub async fn update_experiences(
     Ok(StatusCode::OK)
 }
 
+fn run_iptables_safe(args: &[&str]) {
+    // 1. Prepare the command as a CString
+    let cmd = CString::new("iptables").unwrap();
+
+    // 2. Prepare the arguments as a Vec<CString>
+    // Note: execvp expects the arguments to include the command name itself as index 0
+    let mut c_args = vec![cmd.clone()];
+    c_args.extend(args.iter().map(|s| CString::new(*s).unwrap()));
+
+    match unsafe { fork() } {
+        Ok(ForkResult::Child) => {
+            // 3. Pass the slice of CStrings to execvp
+            // Nix handles the conversion to the expected *const *const i8 format
+            let _ = execvp(&cmd, &c_args);
+            
+            // If execvp returns, it failed
+            std::process::exit(1); 
+        }
+        Ok(ForkResult::Parent { .. }) => {
+            // Parent logic
+        }
+        Err(_) => eprintln!("Fork failed"),
+    }
+}
+
+async fn handle_connect(
+    ConnectInfo(addr): ConnectInfo<SocketAddr>,
+) -> impl IntoResponse {
+    let client_ip = addr.ip().to_string();
+
+    // 1. Authorize: Use the safe wrapper
+    run_iptables_safe(&["-I", "portal_auth", "1", "-s", &client_ip, "-j", "ACCEPT"]);
+
+    // 2. Spawn a background task to revoke access
+    let ip_clone = client_ip.clone();
+    tokio::spawn(async move {
+        sleep(Duration::from_secs(30 * 60)).await;
+        run_iptables_safe(&["-D", "portal_auth", "-s", &ip_clone, "-j", "ACCEPT"]);
+    });
+
+    Html(r#"
+        <html>
+            <body>
+                <script>
+                    window.opener.location.href = "http://www.google.com";
+                    window.close();
+                </script>
+            </body>
+        </html>
+    "#)
+}
 
 const INDEX_HTML: &str = r##"
 <!DOCTYPE html>
@@ -1344,7 +1404,7 @@ body {
   background: var(--bg);
   color: var(--army-sage);
   font-family: var(--font-main);
-  overflow: hidden;
+  overflow-x: hidden; overflow-y: auto;
   height: 100vh;
   text-transform: uppercase;
 }
@@ -1375,7 +1435,7 @@ body {
 @keyframes scanline { 0% { top: -10%; } 100% { top: 110%; } }
 
 main {
-  position: relative; z-index: 10; height: 100vh; padding: 20px;
+  position: relative; z-index: 10; min-height: 100vh; padding: 20px;
   display: grid; 
   grid-template-columns: 350px 1fr 350px; 
   grid-template-rows: 60px 1fr 280px;
@@ -1875,6 +1935,41 @@ header {
   display: none !important;
 }
 
+/* Responsive adjustments for screens smaller than 900px */
+@media (max-width: 900px) {
+  body {
+    overflow-y: auto; /* Allow scrolling on mobile */
+    height: auto;     /* Remove fixed height */
+  }
+
+  main {
+    display: flex;
+    flex-direction: column;
+    height: auto;
+    padding: 10px;
+    grid-template-rows: auto;
+    gap: 15px;
+  }
+
+  header {
+    height: auto;
+    padding: 15px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+
+  /* Reset fixed widths to allow fluid scaling */
+  .panel, .avatar-wrapper {
+    width: 100% !important;
+    height: auto !important;
+  }
+  
+  /* Prevent avatar from becoming too tall on wide mobile phones */
+  .avatar-wrapper {
+    max-height: 300px;
+  }
+}
+
 </style>
 </head>
 <body>
@@ -1891,7 +1986,8 @@ header {
       <button class="arrow next" aria-label="Next"></button>
     </div>
     <button id="openLoginBtn" class="uplink-btn">AUTHENTICATE</button>
-    <button class="uplink-btn" onclick="initUplink()">INITIALIZE UPLINK</button>
+    <button class="uplink-btn" onclick="initUplink()">NEW PROFILE</button>
+    <button class="uplink-btn" onclick="connectInternet()">INTERNET</button>
     <button id="openModalBtn" class="uplink-btn hidden">INITIATE OVERRIDE</button>
   </header>
 
@@ -2262,6 +2358,29 @@ async function initUplink() {
     alert("FATAL UPLINK ERROR: Connection refused.");
   }
 }
+
+async function connectInternet() {
+  try {
+    // 1. Fetch the pre-styled HTML from your Axum endpoint
+    const response = await fetch('/connect');
+    if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+    
+    const fullHtml = await response.text();
+
+    // 2. Open the pop-up window
+    const popup = window.open("", "Internet", "width=600,height=400,scrollbars=yes");
+    
+    // 3. Directly stream the server's HTML content
+    popup.document.open();
+    popup.document.write(fullHtml);
+    popup.document.close(); 
+
+  } catch (err) {
+    console.error("Uplink failed:", err);
+    alert("FATAL UPLINK ERROR: Connection refused.");
+  }
+}
+
 
 let skills = [];
 let selectedNode = null;
